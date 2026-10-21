@@ -9,9 +9,9 @@ use super::service::{self, truncate_to_tokens, ChatContext, RequestPlan};
 use crate::audio::recording_saver::TranscriptSegment;
 use crate::database::repositories::chat::MeetingChatRepository;
 use crate::database::repositories::meeting::MeetingsRepository;
-use crate::database::repositories::summary::SummaryProcessesRepository;
 use crate::summary::llm_client::LLMProvider;
 use crate::summary::processor::clean_llm_markdown_detailed;
+use crate::summary::service::{key_terms_from_result, stored_summary_result};
 
 const LARGE_CONTEXT_INPUT_TOKENS: usize = 24000;
 const ANSWER_TOKENS: u32 = 1000;
@@ -148,26 +148,27 @@ async fn add_recap<R: Runtime>(app: &AppHandle<R>, meeting_id: &str) -> Result<(
     if MeetingChatRepository::has_recap(&pool, meeting_id).await.map_err(|e| e.to_string())? {
         return Ok(());
     }
-    let summary = stored_summary(&pool, meeting_id).await?;
+    let result = stored_result(&pool, meeting_id).await?;
+    let summary = summary_markdown(result.as_ref());
     if summary.trim().is_empty() {
         return Ok(());
     }
-    MeetingChatRepository::append_recap_once(&pool, meeting_id, summary.trim())
+    let key_terms = result.as_ref().and_then(key_terms_from_result);
+    MeetingChatRepository::append_recap_once(&pool, meeting_id, key_terms.as_deref(), summary.trim())
         .await
         .map_err(|e| e.to_string())
 }
 
-async fn stored_summary(pool: &sqlx::SqlitePool, meeting_id: &str) -> Result<String, String> {
-    Ok(SummaryProcessesRepository::get_summary_data(pool, meeting_id)
-        .await
-        .map_err(|e| e.to_string())?
-        .map(|process| summary_markdown(process.result))
-        .unwrap_or_default())
+async fn stored_result(pool: &sqlx::SqlitePool, meeting_id: &str) -> Result<Option<serde_json::Value>, String> {
+    stored_summary_result(pool, meeting_id).await.map_err(|e| e.to_string())
 }
 
-fn summary_markdown(result: Option<String>) -> String {
+async fn stored_summary(pool: &sqlx::SqlitePool, meeting_id: &str) -> Result<String, String> {
+    Ok(summary_markdown(stored_result(pool, meeting_id).await?.as_ref()))
+}
+
+fn summary_markdown(result: Option<&serde_json::Value>) -> String {
     result
-        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
         .and_then(|value| value.get("markdown").and_then(|m| m.as_str()).map(|m| clean_llm_markdown_detailed(m).markdown))
         .unwrap_or_default()
 }
@@ -223,10 +224,11 @@ mod tests {
 
     #[test]
     fn summary_markdown_reads_only_markdown_summaries() {
-        assert_eq!(summary_markdown(Some(r##"{"markdown":"# Notes","MeetingName":"x"}"##.to_string())), "# Notes");
-        assert_eq!(summary_markdown(Some(r##"{"markdown":"<think>plan</think># Notes"}"##.to_string())), "# Notes");
-        assert_eq!(summary_markdown(Some(r#"{"summary_json":[]}"#.to_string())), "");
-        assert_eq!(summary_markdown(Some("not json".to_string())), "");
+        let parsed = |raw: &str| serde_json::from_str::<serde_json::Value>(raw).ok();
+        assert_eq!(summary_markdown(parsed(r##"{"markdown":"# Notes","MeetingName":"x"}"##).as_ref()), "# Notes");
+        assert_eq!(summary_markdown(parsed(r##"{"markdown":"<think>plan</think># Notes"}"##).as_ref()), "# Notes");
+        assert_eq!(summary_markdown(parsed(r#"{"summary_json":[]}"#).as_ref()), "");
+        assert_eq!(summary_markdown(parsed("not json").as_ref()), "");
         assert_eq!(summary_markdown(None), "");
     }
 

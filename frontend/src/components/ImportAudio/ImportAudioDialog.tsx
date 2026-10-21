@@ -37,6 +37,7 @@ import { useRouter } from 'next/navigation';
 import { useSidebar } from '../Sidebar/SidebarProvider';
 import { LANGUAGES } from '@/constants/languages';
 import { useTranscriptionModels, ModelOption } from '@/hooks/useTranscriptionModels';
+import { isCloudSpeech } from '@/lib/model-catalog';
 
 
 interface ImportAudioDialogProps {
@@ -170,12 +171,13 @@ export function ImportAudioDialog({
     return availableModels.find((m) => m.provider === provider && m.name === name);
   }, [selectedModelKey, availableModels]);
   const isParakeetModel = selectedModel?.provider === 'parakeet';
+  const isCloudModel = !!selectedModel && isCloudSpeech(selectedModel.provider);
 
   useEffect(() => {
-    if (isParakeetModel && selectedLang !== 'auto') {
+    if ((isParakeetModel && selectedLang !== 'auto') || (isCloudModel && selectedLang === 'auto-translate')) {
       setSelectedLang('auto');
     }
-  }, [isParakeetModel, selectedLang]);
+  }, [isParakeetModel, isCloudModel, selectedLang]);
 
   const handleSelectFile = async () => {
     const info = await selectFile();
@@ -354,7 +356,7 @@ export function ImportAudioDialog({
                               <SelectValue placeholder="Select language" />
                             </SelectTrigger>
                             <SelectContent className="max-h-60">
-                              {LANGUAGES.map((lang) => (
+                              {LANGUAGES.filter((lang) => !isCloudModel || lang.code !== 'auto-translate').map((lang) => (
                                 <SelectItem key={lang.code} value={lang.code}>
                                   {lang.name}
                                 </SelectItem>
@@ -395,7 +397,7 @@ export function ImportAudioDialog({
                                   key={`${model.provider}:${model.name}`}
                                   value={`${model.provider}:${model.name}`}
                                 >
-                                  {model.displayName} ({Math.round(model.size_mb)} MB)
+                                  {model.displayName} ({model.detail})
                                 </SelectItem>
                               ))}
                             </SelectContent>

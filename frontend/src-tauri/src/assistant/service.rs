@@ -838,7 +838,7 @@ fn chat_memory(chat: &[ChatMessage]) -> impl Iterator<Item = &ChatMessage> {
         .iter()
         .rposition(|m| m.role == ChatRole::Summary && !m.error)
         .unwrap_or(0);
-    chat[start..].iter().filter(|m| !m.error && m.role != ChatRole::Recap)
+    chat[start..].iter().filter(|m| !m.error && !matches!(m.role, ChatRole::Recap | ChatRole::KeyTerms))
 }
 
 fn chat_budget(input_budget: usize) -> usize {
@@ -1291,9 +1291,13 @@ mod tests {
     #[test]
     fn the_meeting_recap_stays_out_of_chat_memory() {
         let message = |id: &str, role: ChatRole, text: &str| ChatMessage { id: id.to_string(), role, text: text.to_string(), error: false };
-        let chat = vec![message("c1", ChatRole::Recap, "The meeting covered the rollout"), message("c2", ChatRole::User, "Who owns it?")];
+        let chat = vec![
+            message("c1", ChatRole::KeyTerms, "Rollout with Anya, etcd and S3"),
+            message("c2", ChatRole::Recap, "The meeting covered the rollout"),
+            message("c3", ChatRole::User, "Who owns it?"),
+        ];
         let ids: Vec<String> = recent_chat(&chat, 10_000).into_iter().map(|m| m.id).collect();
-        assert_eq!(ids, vec!["c2"]);
+        assert_eq!(ids, vec!["c3"]);
         assert_eq!(chat_context(&chat, 3000).used, rough_token_count("Who owns it?"));
     }
 

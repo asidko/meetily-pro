@@ -22,12 +22,14 @@ import { toast } from 'sonner';
 import { useConfig } from '@/contexts/ConfigContext';
 import { LANGUAGES } from '@/constants/languages';
 import { useTranscriptionModels, ModelOption } from '@/hooks/useTranscriptionModels';
+import { catalogLabel, isCloudSpeech } from '@/lib/model-catalog';
 
 interface RetranscribeDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   meetingId: string;
   meetingFolderPath: string | null;
+  hasKeyTerms: boolean;
   onComplete?: () => void;
 }
 
@@ -55,6 +57,7 @@ export function RetranscribeDialog({
   onOpenChange,
   meetingId,
   meetingFolderPath,
+  hasKeyTerms,
   onComplete,
 }: RetranscribeDialogProps) {
   const { selectedLanguage, transcriptModelConfig } = useConfig();
@@ -62,6 +65,7 @@ export function RetranscribeDialog({
   const [progress, setProgress] = useState<RetranscriptionProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedLang, setSelectedLang] = useState(selectedLanguage || 'auto');
+  const [useMeetingContext, setUseMeetingContext] = useState(true);
 
   // Use centralized model fetching hook
   const {
@@ -92,12 +96,14 @@ export function RetranscribeDialog({
     return availableModels.find(m => m.provider === provider && m.name === name);
   }, [selectedModelKey, availableModels]);
   const isParakeetModel = selectedModelDetails?.provider === 'parakeet';
+  const cloudProvider = selectedModelDetails && isCloudSpeech(selectedModelDetails.provider) ? selectedModelDetails.provider : null;
+  const canUseMeetingContext = hasKeyTerms && cloudProvider === 'openai-speech';
 
   useEffect(() => {
-    if (isParakeetModel && selectedLang !== 'auto') {
+    if ((isParakeetModel && selectedLang !== 'auto') || (cloudProvider && selectedLang === 'auto-translate')) {
       setSelectedLang('auto');
     }
-  }, [isParakeetModel, selectedLang]);
+  }, [isParakeetModel, cloudProvider, selectedLang]);
 
   // Reset state only when dialog transitions from closed to open
   // This prevents re-initialization when config changes while dialog is already open
@@ -111,6 +117,7 @@ export function RetranscribeDialog({
       setProgress(null);
       setError(null);
       setSelectedLang(selectedLanguage || 'auto');
+      setUseMeetingContext(true);
 
       // Fetch available models using centralized hook
       fetchModels();
@@ -205,6 +212,7 @@ export function RetranscribeDialog({
         language: languageToSend,
         model: selectedModelDetails?.name || null,
         provider: selectedModelDetails?.provider || null,
+        useMeetingContext: canUseMeetingContext && useMeetingContext,
       });
     } catch (err: any) {
       setIsProcessing(false);
@@ -295,7 +303,7 @@ export function RetranscribeDialog({
                     <SelectValue placeholder="Select language" />
                   </SelectTrigger>
                   <SelectContent className="max-h-60">
-                    {LANGUAGES.map((lang) => (
+                    {LANGUAGES.filter((lang) => !cloudProvider || lang.code !== 'auto-translate').map((lang) => (
                       <SelectItem key={lang.code} value={lang.code}>
                         {lang.name}
                       </SelectItem>
@@ -332,14 +340,28 @@ export function RetranscribeDialog({
                 <SelectContent>
                   {availableModels.map((model) => (
                     <SelectItem key={`${model.provider}:${model.name}`} value={`${model.provider}:${model.name}`}>
-                      {model.displayName} ({Math.round(model.size_mb)} MB)
+                      {model.displayName} ({model.detail})
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Choose a transcription model
+                {cloudProvider ? `The audio is sent to ${catalogLabel(cloudProvider)}.` : 'Choose a transcription model'}
               </p>
+              {canUseMeetingContext && (
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 accent-blue-600"
+                    checked={useMeetingContext}
+                    onChange={(event) => setUseMeetingContext(event.target.checked)}
+                  />
+                  <span>
+                    Give the model the meeting&apos;s topic and key terms
+                    <span className="block text-xs text-muted-foreground">Helps it spell names and jargon right.</span>
+                  </span>
+                </label>
+              )}
             </div>
           )}
 

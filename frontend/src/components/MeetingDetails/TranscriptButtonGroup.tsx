@@ -13,6 +13,7 @@ interface TranscriptButtonGroupProps {
   onOpenMeetingFolder: () => Promise<void>;
   meetingId?: string;
   meetingFolderPath?: string | null;
+  hasKeyTerms: boolean;
   onRefetchTranscripts?: () => Promise<void>;
 }
 
@@ -23,6 +24,7 @@ export function TranscriptButtonGroup({
   onOpenMeetingFolder,
   meetingId,
   meetingFolderPath,
+  hasKeyTerms,
   onRefetchTranscripts,
 }: TranscriptButtonGroupProps) {
   const [showRetranscribeDialog, setShowRetranscribeDialog] = useState(false);
@@ -80,6 +82,7 @@ export function TranscriptButtonGroup({
           onOpenChange={setShowRetranscribeDialog}
           meetingId={meetingId}
           meetingFolderPath={meetingFolderPath}
+          hasKeyTerms={hasKeyTerms}
           onComplete={handleRetranscribeComplete}
         />
       )}

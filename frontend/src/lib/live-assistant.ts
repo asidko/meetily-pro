@@ -14,7 +14,7 @@ export interface Suggestion {
 
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant' | 'summary' | 'recap';
+  role: 'user' | 'assistant' | 'summary' | 'recap' | 'key_terms';
   text: string;
   error: boolean;
 }

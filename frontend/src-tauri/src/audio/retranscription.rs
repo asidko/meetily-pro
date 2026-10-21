@@ -95,6 +95,7 @@ pub async fn start_retranscription<R: Runtime>(
     language: Option<String>,
     model: Option<String>,
     provider: Option<String>,
+    use_meeting_context: bool,
 ) -> Result<RetranscriptionResult> {
     // Acquire guard - ensures flag is cleared even on panic/early return
     let _guard = RetranscriptionGuard::acquire().map_err(|e| anyhow!(e))?;
@@ -102,11 +103,10 @@ pub async fn start_retranscription<R: Runtime>(
     // Reset cancellation flag
     RETRANSCRIPTION_CANCELLED.store(false, Ordering::SeqCst);
 
-    let use_parakeet = provider.as_deref() == Some("parakeet");
-    let result = run_retranscription(app.clone(), meeting_id.clone(), meeting_folder_path, language, model, provider).await;
+    let result = run_retranscription(app.clone(), meeting_id.clone(), meeting_folder_path, language, model, provider.clone(), use_meeting_context).await;
 
     // Unload the engine after the batch job (success, failure, or cancellation)
-    super::common::unload_engine_after_batch(use_parakeet).await;
+    super::common::unload_engine_after_batch(provider.as_deref()).await;
 
     // Guard will automatically clear flag on drop
     // No need for manual: RETRANSCRIPTION_IN_PROGRESS.store(false, Ordering::SeqCst);
@@ -177,6 +177,7 @@ async fn run_retranscription<R: Runtime>(
     language: Option<String>,
     model: Option<String>,
     provider: Option<String>,
+    use_meeting_context: bool,
 ) -> Result<RetranscriptionResult> {
     let folder_path = PathBuf::from(&meeting_folder_path);
     let audio_path = find_audio_file(&folder_path)?;
@@ -300,12 +301,21 @@ async fn run_retranscription<R: Runtime>(
     emit_progress(&app, &meeting_id, "transcribing", 25, "Loading transcription engine...");
 
     // Initialize the appropriate engine once (not per-segment)
-    let whisper_engine = if !use_parakeet {
+    let hint_supported = provider.as_deref().and_then(crate::audio::transcription::CloudSpeechService::from_provider)
+        == Some(crate::audio::transcription::CloudSpeechService::OpenAI);
+    let hint = if use_meeting_context && hint_supported {
+        let state = app.try_state::<AppState>().ok_or_else(|| anyhow!("App state not available"))?;
+        crate::summary::service::stored_key_terms(state.db_manager.pool(), &meeting_id).await?
+    } else {
+        None
+    };
+    let cloud_engine = super::common::cloud_batch_provider(&app, provider.as_deref(), model.as_deref(), hint).await?;
+    let whisper_engine = if cloud_engine.is_none() && !use_parakeet {
         Some(get_or_init_whisper(&app, model.as_deref()).await?)
     } else {
         None
     };
-    let parakeet_engine = if use_parakeet {
+    let parakeet_engine = if cloud_engine.is_none() && use_parakeet {
         Some(get_or_init_parakeet(&app, model.as_deref()).await?)
     } else {
         None
@@ -340,63 +350,83 @@ async fn run_retranscription<R: Runtime>(
     let mut all_transcripts: Vec<(String, f64, f64)> = Vec::new(); // (text, start_ms, end_ms)
     let mut total_confidence = 0.0f32;
 
-    for (i, segment) in processable_segments.iter().enumerate() {
-        // Check for cancellation before each segment
-        if RETRANSCRIPTION_CANCELLED.load(Ordering::SeqCst) {
+    if let Some(cloud) = &cloud_engine {
+        let cancelled = || RETRANSCRIPTION_CANCELLED.load(Ordering::SeqCst);
+        let transcripts = super::common::transcribe_cloud_segments(
+            cloud,
+            &processable_segments,
+            language.clone(),
+            |done, total| {
+                let progress = 25 + ((done as f32 / total as f32) * 55.0) as u32;
+                emit_progress(&app, &meeting_id, "transcribing", progress, &format!("Transcribed {} of {} segments...", done, total));
+            },
+            cancelled,
+        )
+        .await;
+        if cancelled() {
             return Err(anyhow!("Retranscription cancelled"));
         }
+        all_transcripts = transcripts?;
+        total_confidence = 0.9 * all_transcripts.len() as f32;
+    } else {
+        for (i, segment) in processable_segments.iter().enumerate() {
+            // Check for cancellation before each segment
+            if RETRANSCRIPTION_CANCELLED.load(Ordering::SeqCst) {
+                return Err(anyhow!("Retranscription cancelled"));
+            }
 
-        // Calculate progress (25% to 80% range for transcription)
-        let progress = 25 + ((i as f32 / processable_count as f32) * 55.0) as u32;
-        let segment_duration_sec = (segment.end_timestamp_ms - segment.start_timestamp_ms) / 1000.0;
-        emit_progress(
-            &app,
-            &meeting_id,
-            "transcribing",
-            progress,
-            &format!(
-                "Transcribing segment {} of {} ({:.1}s)...",
-                i + 1,
-                processable_count,
-                segment_duration_sec
-            ),
-        );
-
-        // Skip very short segments (< 100ms of audio = 1600 samples at 16kHz)
-        if segment.samples.len() < 1600 {
-            debug!("Skipping short segment {} with {} samples", i, segment.samples.len());
-            continue;
-        }
-
-        // Transcribe this segment
-        let (text, conf) = if use_parakeet {
-            let engine = parakeet_engine.as_ref().unwrap();
-            let text = engine
-                .transcribe_audio(segment.samples.clone())
-                .await
-                .map_err(|e| anyhow!("Parakeet transcription failed on segment {}: {}", i, e))?;
-            (text, 0.9f32)
-        } else {
-            let engine = whisper_engine.as_ref().unwrap();
-            let (text, conf, _) = engine
-                .transcribe_audio_with_confidence(segment.samples.clone(), language.clone())
-                .await
-                .map_err(|e| anyhow!("Whisper transcription failed on segment {}: {}", i, e))?;
-            (text, conf)
-        };
-
-        // Skip empty transcripts
-        let trimmed = text.trim();
-        if !trimmed.is_empty() {
-            debug!(
-                "Segment {}/{}: {:.1}s, conf={:.2}, text='{}'",
-                i + 1, processable_count, segment_duration_sec, conf,
-                if trimmed.len() > 80 { let mut end = 80; while !trimmed.is_char_boundary(end) { end -= 1; } &trimmed[..end] } else { trimmed }
+            // Calculate progress (25% to 80% range for transcription)
+            let progress = 25 + ((i as f32 / processable_count as f32) * 55.0) as u32;
+            let segment_duration_sec = (segment.end_timestamp_ms - segment.start_timestamp_ms) / 1000.0;
+            emit_progress(
+                &app,
+                &meeting_id,
+                "transcribing",
+                progress,
+                &format!(
+                    "Transcribing segment {} of {} ({:.1}s)...",
+                    i + 1,
+                    processable_count,
+                    segment_duration_sec
+                ),
             );
-            all_transcripts.push((text, segment.start_timestamp_ms, segment.end_timestamp_ms));
-            total_confidence += conf;
-        } else {
-            debug!("Segment {}/{}: {:.1}s — empty transcription", i + 1, processable_count, segment_duration_sec);
+
+            // Skip very short segments (< 100ms of audio = 1600 samples at 16kHz)
+            if segment.samples.len() < 1600 {
+                debug!("Skipping short segment {} with {} samples", i, segment.samples.len());
+                continue;
+            }
+
+            // Transcribe this segment
+            let (text, conf) = if use_parakeet {
+                let engine = parakeet_engine.as_ref().unwrap();
+                let text = engine
+                    .transcribe_audio(segment.samples.clone())
+                    .await
+                    .map_err(|e| anyhow!("Parakeet transcription failed on segment {}: {}", i, e))?;
+                (text, 0.9f32)
+            } else {
+                let engine = whisper_engine.as_ref().unwrap();
+                let (text, conf, _) = engine
+                    .transcribe_audio_with_confidence(segment.samples.clone(), language.clone())
+                    .await
+                    .map_err(|e| anyhow!("Whisper transcription failed on segment {}: {}", i, e))?;
+                (text, conf)
+            };
+
+            // Skip empty transcripts
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                debug!(
+                    "Segment {}/{}: {:.1}s, conf={:.2}, text='{}'",
+                    i + 1, processable_count, segment_duration_sec, conf,
+                    if trimmed.len() > 80 { let mut end = 80; while !trimmed.is_char_boundary(end) { end -= 1; } &trimmed[..end] } else { trimmed }
+                );
+                all_transcripts.push((text, segment.start_timestamp_ms, segment.end_timestamp_ms));
+                total_confidence += conf;
+            } else {
+                debug!("Segment {}/{}: {:.1}s — empty transcription", i + 1, processable_count, segment_duration_sec);
+            }
         }
     }
 
@@ -785,6 +815,7 @@ pub async fn start_retranscription_command<R: Runtime>(
     language: Option<String>,
     model: Option<String>,
     provider: Option<String>,
+    use_meeting_context: Option<bool>,
 ) -> Result<RetranscriptionStarted, String> {
 
     // Check if retranscription is already in progress (guard will be acquired in start_retranscription)
@@ -804,6 +835,7 @@ pub async fn start_retranscription_command<R: Runtime>(
             language,
             model,
             provider,
+            use_meeting_context.unwrap_or(false),
         )
         .await;
 

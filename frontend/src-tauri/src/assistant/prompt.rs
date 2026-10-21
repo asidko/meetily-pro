@@ -156,12 +156,13 @@ where
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum ChatRole {
     User,
     Assistant,
     Summary,
     Recap,
+    KeyTerms,
 }
 
 impl ChatRole {
@@ -171,6 +172,7 @@ impl ChatRole {
             Self::Assistant => "assistant",
             Self::Summary => "summary",
             Self::Recap => "recap",
+            Self::KeyTerms => "key_terms",
         }
     }
 
@@ -179,6 +181,7 @@ impl ChatRole {
             "user" => Self::User,
             "summary" => Self::Summary,
             "recap" => Self::Recap,
+            "key_terms" => Self::KeyTerms,
             _ => Self::Assistant,
         }
     }
@@ -311,7 +314,7 @@ pub fn format_chat(messages: &[ChatMessage]) -> String {
         .map(|message| {
             let speaker = match message.role {
                 ChatRole::User => "User",
-                ChatRole::Assistant | ChatRole::Recap => "Assistant",
+                ChatRole::Assistant | ChatRole::Recap | ChatRole::KeyTerms => "Assistant",
                 ChatRole::Summary => "Summary of the earlier chat",
             };
             format!("{}: {}\n", speaker, message.text.trim())
@@ -802,8 +805,9 @@ mod tests {
 
     #[test]
     fn chat_roles_round_trip_through_storage() {
-        for role in [ChatRole::User, ChatRole::Assistant, ChatRole::Summary, ChatRole::Recap] {
+        for role in [ChatRole::User, ChatRole::Assistant, ChatRole::Summary, ChatRole::Recap, ChatRole::KeyTerms] {
             assert_eq!(ChatRole::parse(role.as_str()), role);
+            assert_eq!(serde_json::to_value(role).unwrap(), role.as_str());
         }
         assert_eq!(ChatRole::parse("other"), ChatRole::Assistant);
     }

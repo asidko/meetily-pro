@@ -165,6 +165,16 @@ async fn cloud_speech_key<R: Runtime>(app: &AppHandle<R>, service: CloudSpeechSe
     Ok(api_key.trim().to_string())
 }
 
+pub(crate) async fn cloud_speech_provider<R: Runtime>(
+    app: &AppHandle<R>,
+    service: CloudSpeechService,
+    model: String,
+    prompt: Option<String>,
+) -> Result<CloudSpeechProvider, String> {
+    let api_key = cloud_speech_key(app, service).await?;
+    Ok(CloudSpeechProvider::new(service, api_key, model).with_prompt(prompt))
+}
+
 /// Get or initialize the appropriate transcription engine based on provider configuration
 pub async fn get_or_init_transcription_engine<R: Runtime>(
     app: &AppHandle<R>,
@@ -203,9 +213,8 @@ pub async fn get_or_init_transcription_engine<R: Runtime>(
     };
 
     if let Some(service) = CloudSpeechService::from_provider(&config.provider) {
-        let api_key = cloud_speech_key(app, service).await?;
         info!("Using {} speech model '{}'", service.label(), config.model);
-        return Ok(TranscriptionEngine::Provider(Arc::new(CloudSpeechProvider::new(service, api_key, config.model))));
+        return Ok(TranscriptionEngine::Provider(Arc::new(cloud_speech_provider(app, service, config.model, None).await?)));
     }
 
     // Initialize the appropriate engine based on provider

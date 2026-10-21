@@ -5,7 +5,7 @@ use crate::summary::llm_client::LLMProvider;
 use crate::summary::language_detection::detect_summary_language;
 use crate::summary::metadata::read_detected_summary_language_from_metadata;
 use crate::summary::processor::{
-    clean_llm_markdown_detailed, extract_meeting_name_from_markdown, final_report_system_prompt, generate_meeting_summary,
+    clean_llm_markdown_detailed, extract_meeting_name_from_markdown, final_report_system_prompt, generate_key_terms, generate_meeting_summary,
     language_name_from_code, require_visible_markdown,
 };
 use crate::ollama::metadata::ModelMetadataCache;
@@ -138,6 +138,26 @@ fn strip_title_if_present(markdown: &str) -> String {
 }
 
 const ENGLISH_CACHE_FIELD: &str = "english_cache";
+pub(crate) const KEY_TERMS_FIELD: &str = "key_terms";
+
+pub(crate) async fn stored_summary_result(pool: &SqlitePool, meeting_id: &str) -> Result<Option<serde_json::Value>, sqlx::Error> {
+    Ok(SummaryProcessesRepository::get_summary_data(pool, meeting_id)
+        .await?
+        .and_then(|process| process.result)
+        .and_then(|raw| serde_json::from_str(&raw).ok()))
+}
+
+pub(crate) async fn stored_key_terms(pool: &SqlitePool, meeting_id: &str) -> Result<Option<String>, sqlx::Error> {
+    Ok(stored_summary_result(pool, meeting_id).await?.as_ref().and_then(key_terms_from_result))
+}
+
+pub(crate) fn key_terms_from_result(result: &serde_json::Value) -> Option<String> {
+    result
+        .get(KEY_TERMS_FIELD)
+        .and_then(|terms| terms.as_str())
+        .filter(|terms| !terms.trim().is_empty())
+        .map(str::to_string)
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct SummaryCacheSource {
@@ -536,7 +556,7 @@ impl SummaryService {
         };
 
         let client = reqwest::Client::new();
-        let result = generate_meeting_summary(
+        let summary_job = generate_meeting_summary(
             &client,
             &provider,
             &model_name,
@@ -554,8 +574,28 @@ impl SummaryService {
             summary_language.as_deref(),
             detected_summary_language.as_deref(),
             cached_english.as_deref(),
-        )
-        .await;
+        );
+        let key_terms_job = generate_key_terms(
+            &client,
+            &provider,
+            &model_name,
+            &final_api_key,
+            &text,
+            token_threshold,
+            ollama_endpoint.as_deref(),
+            custom_openai_endpoint.as_deref(),
+            custom_openai_temperature,
+            custom_openai_top_p,
+            app_data_dir.as_ref(),
+            &cancellation_token,
+        );
+        let (result, key_terms) = if crate::assistant::service::is_cloud(&provider, ollama_endpoint.as_deref()) {
+            tokio::join!(summary_job, key_terms_job)
+        } else {
+            let result = summary_job.await;
+            let key_terms = if result.is_ok() { key_terms_job.await } else { None };
+            (result, key_terms)
+        };
 
         let duration = start_time.elapsed().as_secs_f64();
 
@@ -573,7 +613,10 @@ impl SummaryService {
                     generated.reasoning_stripped,
                     generated.normalization_fallback,
                 ) {
-                    Ok(result) => result,
+                    Ok(mut result) => {
+                        result[KEY_TERMS_FIELD] = serde_json::json!(key_terms);
+                        result
+                    }
                     Err(error) => {
                         Self::update_process_failed(&pool, &meeting_id, started_at, &error).await;
                         Self::cleanup_cancellation_token(&meeting_id, started_at);
@@ -679,6 +722,15 @@ impl SummaryService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn key_terms_come_from_the_stored_summary_result() {
+        let terms = |raw: &str| key_terms_from_result(&serde_json::from_str(raw).unwrap());
+        assert_eq!(terms(r#"{"markdown":"x","key_terms":"Rollout with Anya"}"#).as_deref(), Some("Rollout with Anya"));
+        assert_eq!(terms(r#"{"markdown":"x","key_terms":null}"#), None);
+        assert_eq!(terms(r#"{"markdown":"x","key_terms":" "}"#), None);
+        assert_eq!(terms(r#"{"markdown":"x"}"#), None);
+    }
 
     #[test]
     fn stale_cleanup_keeps_the_replacement_cancellation_token() {

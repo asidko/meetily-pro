@@ -37,6 +37,15 @@ impl std::fmt::Display for TranscriptionError {
 
 impl std::error::Error for TranscriptionError {}
 
+impl TranscriptionError {
+    pub fn detail(&self) -> String {
+        match self {
+            Self::EngineFailed(message) => message.clone(),
+            other => other.to_string(),
+        }
+    }
+}
+
 /// Unified transcription result across all providers
 #[derive(Debug, Clone)]
 pub struct TranscriptResult {
