@@ -32,6 +32,13 @@ The macOS app is ad-hoc signed, not notarized. After dragging it to Applications
 
 ## What's new
 
+### v1.8.0
+
+- Retranscribe a meeting or import a recording with the OpenAI or OpenRouter speech models too.
+- Each summary comes with a short note on the meeting's topic and key terms, shown in the chat just before it.
+- When retranscribing with OpenAI, that note helps the model spell names and jargon right.
+- The About window now shows only the version, updates and links.
+
 ### v1.7.0
 
 - Transcribe calls with OpenAI's GPT Transcribe, straight from OpenAI or through OpenRouter, using the key you already saved for AI.
@@ -44,13 +51,6 @@ The macOS app is ad-hoc signed, not notarized. After dragging it to Applications
 - Summaries are shorter: what the meeting was about, what was decided and what happens next.
 - The chat memory gauge now sits next to the message box and turns into a Compact link when the chat gets long.
 - Copy any assistant reply with one click.
-
-### v1.5.0
-
-- Paste long texts into the assistant chat; a gauge shows how full its memory is, and Compact keeps a short summary so you can keep going.
-- Live tips follow what you ask in the chat and the whole meeting so far, and arrive one to three at a time.
-- Questions and tips from a call stay on the meeting page until you close them.
-- Pick a model with the Use button next to each ready AI service.
 
 ## Features
 
