@@ -93,6 +93,12 @@ export function About() {
             </div>
 
             <div className="pt-2 border-t border-gray-200 text-center text-xs text-gray-500">
+                <p className="mb-1">
+                    By{' '}
+                    <button type="button" className="text-blue-600 hover:underline" onClick={() => openLink('https://github.com/asidko')}>
+                        Alexander Sidko
+                    </button>
+                </p>
                 <button type="button" className="text-blue-600 hover:underline" onClick={() => openLink('https://github.com/asidko/meetily-pro')}>
                     github.com/asidko/meetily-pro
                 </button>
