@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useConfig } from '@/contexts/ConfigContext';
-import { CLOUD_PROVIDERS, loadProvider, type Call, type Catalog, type CatalogInputs, type CatalogProvider } from '@/lib/model-catalog';
+import { CLOUD_PROVIDERS, CLOUD_SPEECH_PROVIDERS, keyProvider, loadProvider, type Call, type Catalog, type CatalogInputs, type CatalogProvider } from '@/lib/model-catalog';
 
 const DOWNLOAD_EVENTS: { event: string; provider: CatalogProvider; done: (payload: { status?: string }) => boolean }[] = [
   { event: 'model-download-complete', provider: 'localWhisper', done: () => true },
@@ -12,7 +12,10 @@ const DOWNLOAD_EVENTS: { event: string; provider: CatalogProvider; done: (payloa
 ];
 
 function changedProviders(previous: CatalogInputs, next: CatalogInputs): CatalogProvider[] {
-  const changed: CatalogProvider[] = CLOUD_PROVIDERS.filter((provider) => (previous.keys[provider] ?? '') !== (next.keys[provider] ?? ''));
+  const changed: CatalogProvider[] = [...CLOUD_PROVIDERS, ...CLOUD_SPEECH_PROVIDERS].filter((provider) => {
+    const key = keyProvider(provider);
+    return !!key && (previous.keys[key] ?? '') !== (next.keys[key] ?? '');
+  });
   if (previous.ollamaEndpoint !== next.ollamaEndpoint) changed.push('ollama');
   return changed;
 }

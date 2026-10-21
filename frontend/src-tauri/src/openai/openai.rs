@@ -28,7 +28,7 @@ struct OpenAIApiResponse {
 /// Cache entry for models
 struct CacheEntry {
     api_key: String,
-    models: Vec<OpenAIModel>,
+    ids: Vec<String>,
     fetched_at: Instant,
 }
 
@@ -57,6 +57,7 @@ fn is_chat_model(model_id: &str) -> bool {
         && !id.contains("instruct")
         && !id.contains("realtime")
         && !id.contains("audio")
+        && !id.contains("transcribe")
 }
 
 /// Fetch OpenAI models from API
@@ -73,13 +74,20 @@ pub async fn get_openai_models(api_key: Option<String>) -> Result<Vec<OpenAIMode
         _ => return Err("API key is required".to_string()),
     };
 
-    // Check cache first
+    Ok(list_model_ids(&api_key)
+        .await?
+        .into_iter()
+        .filter(|id| is_chat_model(id))
+        .map(|id| OpenAIModel { id })
+        .collect())
+}
+
+pub async fn list_model_ids(api_key: &str) -> Result<Vec<String>, String> {
     {
         let cache = MODELS_CACHE.read().map_err(|e| e.to_string())?;
         if let Some(entry) = cache.as_ref() {
             if entry.api_key == api_key && entry.fetched_at.elapsed() < Duration::from_secs(CACHE_TTL_SECS) {
-                log::info!("Returning cached OpenAI models ({} models)", entry.models.len());
-                return Ok(entry.models.clone());
+                return Ok(entry.ids.clone());
             }
         }
     }
@@ -108,27 +116,21 @@ pub async fn get_openai_models(api_key: Option<String>) -> Result<Vec<OpenAIMode
         Err(e) => return Err(format!("Could not read the OpenAI model list: {}", e)),
     };
 
-    // Filter to only chat models and map to our struct
-    let models: Vec<OpenAIModel> = api_response
-        .data
-        .into_iter()
-        .filter(|m| is_chat_model(&m.id))
-        .map(|m| OpenAIModel { id: m.id })
-        .collect();
+    let ids: Vec<String> = api_response.data.into_iter().map(|m| m.id).collect();
 
-    log::info!("Fetched {} OpenAI models from API", models.len());
+    log::info!("Fetched {} OpenAI models from API", ids.len());
 
     // Update cache
     {
         let mut cache = MODELS_CACHE.write().map_err(|e| e.to_string())?;
         *cache = Some(CacheEntry {
-            api_key: api_key.clone(),
-            models: models.clone(),
+            api_key: api_key.to_string(),
+            ids: ids.clone(),
             fetched_at: Instant::now(),
         });
     }
 
-    Ok(models)
+    Ok(ids)
 }
 
 /// Clear the models cache (useful when API key changes)

@@ -572,13 +572,17 @@ async fn transcribe_chunk_with_provider<R: Runtime>(
                         e
                     );
 
+                    let detail = match &e {
+                        TranscriptionError::EngineFailed(message) => message.clone(),
+                        other => other.to_string(),
+                    };
                     let _ = app.emit(
                         "transcription-error",
                         &serde_json::json!({
                             "error": e.to_string(),
-                            "userMessage": format!("Transcription failed: {}", e),
+                            "userMessage": format!("Part of the voice transcript was skipped. {}", detail),
                             "actionable": false,
-                            "phase": "active"
+                            "phase": "chunk"
                         }),
                     );
 

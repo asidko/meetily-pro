@@ -13,7 +13,7 @@
 
 <p align="center"><img src="docs/meetily_demo.gif" width="720" alt="Meetily demo" /></p>
 
-Records mic and system audio, transcribes live with Whisper or Parakeet, summarizes with the LLM you pick. Nothing leaves the machine unless you choose a cloud model.
+Records mic and system audio, transcribes live with Whisper, Parakeet or OpenAI's GPT Transcribe, summarizes with the LLM you pick. Nothing leaves the machine unless you choose a cloud model.
 
 Fork of [Zackriya-Solutions/meetily](https://github.com/Zackriya-Solutions/meetily). Tracks upstream `main`, adds a live in-meeting assistant.
 
@@ -26,11 +26,17 @@ The macOS app is ad-hoc signed, not notarized. After dragging it to Applications
 
 ## Quickstart
 
-1. First launch downloads a transcription model. Whisper `base` is fine to start.
+1. First launch downloads a transcription model. Whisper `base` is fine to start, or press Use on the OpenAI or OpenRouter Speech row in Settings > Models to transcribe in the cloud.
 2. Pick an AI model: built-in local model, Ollama, a cloud key (OpenAI, Claude, Groq, OpenRouter, custom OpenAI-compatible), or your own Claude Code or Codex sign-in.
 3. Choose mic and system-audio device, press Record. Stop when done; the summary appears in the meeting.
 
 ## What's new
+
+### v1.7.0
+
+- Transcribe calls with OpenAI's GPT Transcribe, straight from OpenAI or through OpenRouter, using the key you already saved for AI.
+- OpenRouter also offers other cloud speech models, such as Deepgram, ElevenLabs and Gemini.
+- If the service fails for a moment, the recording keeps going and you see what was skipped.
 
 ### v1.6.0
 
@@ -46,15 +52,9 @@ The macOS app is ad-hoc signed, not notarized. After dragging it to Applications
 - Questions and tips from a call stay on the meeting page until you close them.
 - Pick a model with the Use button next to each ready AI service.
 
-### v1.4.0
-
-- Use your Claude Code or Codex sign-in as the AI model, no API key needed.
-- The live assistant now brings useful facts and tips, not only questions.
-- Change the transcription language during a call (Whisper).
-
 ## Features
 
-Live transcription on device (Whisper with Metal/CUDA/Vulkan/ROCm, or Parakeet on CPU), VAD so only speech hits the model.
+Live transcription on device (Whisper with Metal/CUDA/Vulkan/ROCm, or Parakeet on CPU) or in the cloud (OpenAI GPT Transcribe, or any OpenRouter speech model), VAD so only speech hits the model.
 
 <p align="center"><img src="docs/home.png" width="720" alt="Live transcription" /></p>
 

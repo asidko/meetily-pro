@@ -39,17 +39,10 @@ struct OpenRouterResponse {
     data: Vec<OpenRouterApiModel>,
 }
 
-#[command]
-pub async fn get_openrouter_models(api_key: Option<String>) -> Result<Vec<OpenRouterModel>, String> {
-    let api_key = match api_key {
-        Some(key) if !key.trim().is_empty() => key.trim().to_string(),
-        _ => return Err("API key is required".to_string()),
-    };
-    let client = Client::new();
-
+pub async fn check_key(client: &Client, api_key: &str) -> Result<(), String> {
     let key_check = client
         .get("https://openrouter.ai/api/v1/key")
-        .bearer_auth(&api_key)
+        .bearer_auth(api_key)
         .timeout(Duration::from_secs(5))
         .send()
         .await
@@ -57,6 +50,17 @@ pub async fn get_openrouter_models(api_key: Option<String>) -> Result<Vec<OpenRo
     if !key_check.status().is_success() {
         return Err(format!("OpenRouter rejected the request (HTTP {})", key_check.status()));
     }
+    Ok(())
+}
+
+#[command]
+pub async fn get_openrouter_models(api_key: Option<String>) -> Result<Vec<OpenRouterModel>, String> {
+    let api_key = match api_key {
+        Some(key) if !key.trim().is_empty() => key.trim().to_string(),
+        _ => return Err("API key is required".to_string()),
+    };
+    let client = Client::new();
+    check_key(&client, &api_key).await?;
 
     let response = client
         .get("https://openrouter.ai/api/v1/models")

@@ -543,7 +543,7 @@ pub(super) fn short_error(error: &str) -> String {
     single_line.chars().take(MAX_ERROR_CHARS).collect()
 }
 
-fn provider_message(body: &str) -> Option<String> {
+pub(crate) fn provider_message(body: &str) -> Option<String> {
     let value: serde_json::Value = serde_json::from_str(body.trim()).ok()?;
     value["error"]["message"].as_str().map(str::to_string)
 }

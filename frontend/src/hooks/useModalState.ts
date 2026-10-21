@@ -137,6 +137,7 @@ export function useModalState(): UseModalStateReturn {
           } else {
             // Show toast instead of modal for non-actionable errors (consistent with sidebar)
             toast.error('', {
+              id: 'transcription-error',
               description: userMessage,
               duration: 5000,
             });
