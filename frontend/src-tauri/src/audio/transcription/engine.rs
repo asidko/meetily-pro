@@ -2,6 +2,7 @@
 //
 // TranscriptionEngine enum and model initialization/validation logic.
 
+use super::cloud_provider::{CloudSpeechProvider, CloudSpeechService};
 use super::provider::TranscriptionProvider;
 use log::{info, warn};
 use std::sync::Arc;
@@ -86,6 +87,10 @@ pub async fn validate_transcription_model_ready<R: Runtime>(app: &AppHandle<R>) 
         }
     };
 
+    if let Some(service) = CloudSpeechService::from_provider(&config.provider) {
+        return cloud_speech_key(app, service).await.map(|_| ());
+    }
+
     // Validate based on provider
     match config.provider.as_str() {
         "localWhisper" => {
@@ -145,6 +150,21 @@ pub async fn validate_transcription_model_ready<R: Runtime>(app: &AppHandle<R>) 
     }
 }
 
+async fn cloud_speech_key<R: Runtime>(app: &AppHandle<R>, service: CloudSpeechService) -> Result<String, String> {
+    let state = app
+        .try_state::<crate::state::AppState>()
+        .ok_or("The database is not ready yet")?;
+    let api_key = crate::database::repositories::setting::SettingsRepository::get_api_key(
+        state.db_manager.pool(),
+        service.key_provider(),
+    )
+    .await
+    .map_err(|e| e.to_string())?
+    .filter(|key| !key.trim().is_empty())
+    .ok_or_else(|| format!("Add your {} API key in Settings > Models to use its voice model.", service.label()))?;
+    Ok(api_key.trim().to_string())
+}
+
 /// Get or initialize the appropriate transcription engine based on provider configuration
 pub async fn get_or_init_transcription_engine<R: Runtime>(
     app: &AppHandle<R>,
@@ -181,6 +201,12 @@ pub async fn get_or_init_transcription_engine<R: Runtime>(
             }
         }
     };
+
+    if let Some(service) = CloudSpeechService::from_provider(&config.provider) {
+        let api_key = cloud_speech_key(app, service).await?;
+        info!("Using {} speech model '{}'", service.label(), config.model);
+        return Ok(TranscriptionEngine::Provider(Arc::new(CloudSpeechProvider::new(service, api_key, config.model))));
+    }
 
     // Initialize the appropriate engine based on provider
     match config.provider.as_str() {

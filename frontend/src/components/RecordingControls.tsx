@@ -269,6 +269,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
 
         // Transcription error listener - handles structured error objects with actionable flag
         const transcriptionErrorUnsubscribe = await listen<TranscriptionErrorPayload>('transcription-error', (event) => {
+          if (event.payload.phase === 'chunk') return;
           console.log('transcription-error event received:', event);
           console.error('Transcription error received:', event.payload);
 

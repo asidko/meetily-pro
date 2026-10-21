@@ -1,8 +1,14 @@
 export type TextProvider = 'builtin-ai' | 'ollama' | 'openai' | 'claude' | 'groq' | 'openrouter' | 'custom-openai' | CliAgentProvider;
-export type SpeechProvider = 'parakeet' | 'localWhisper';
+export const CLOUD_SPEECH = {
+  'openai-speech': 'openai',
+  'openrouter-speech': 'openrouter',
+} as const;
+export type CloudSpeechProvider = keyof typeof CLOUD_SPEECH;
+export const CLOUD_SPEECH_PROVIDERS = Object.keys(CLOUD_SPEECH) as CloudSpeechProvider[];
+export type SpeechProvider = 'parakeet' | 'localWhisper' | CloudSpeechProvider;
 export type CatalogProvider = TextProvider | SpeechProvider;
 
-export const SPEECH_PROVIDERS: SpeechProvider[] = ['parakeet', 'localWhisper'];
+export const SPEECH_PROVIDERS: SpeechProvider[] = ['parakeet', 'localWhisper', ...CLOUD_SPEECH_PROVIDERS];
 export const CLI_AGENTS = ['claude-code', 'codex'] as const;
 export type CliAgentProvider = typeof CLI_AGENTS[number];
 export const TEXT_PROVIDERS: TextProvider[] = ['builtin-ai', 'ollama', 'openai', 'claude', 'groq', 'openrouter', 'custom-openai', ...CLI_AGENTS];
@@ -18,6 +24,8 @@ const LABELS: Record<CatalogProvider, string> = {
   claude: 'Claude',
   groq: 'Groq',
   openrouter: 'OpenRouter',
+  'openai-speech': 'OpenAI',
+  'openrouter-speech': 'OpenRouter',
   'custom-openai': 'Custom server',
   'claude-code': 'Claude Code',
   codex: 'Codex',
@@ -25,6 +33,15 @@ const LABELS: Record<CatalogProvider, string> = {
 
 export function catalogLabel(provider: string): string {
   return LABELS[provider as CatalogProvider] ?? provider;
+}
+
+export function isCloudSpeech(provider: string): provider is CloudSpeechProvider {
+  return provider in CLOUD_SPEECH;
+}
+
+export function keyProvider(provider: string): CloudProvider | null {
+  if (isCloudSpeech(provider)) return CLOUD_SPEECH[provider];
+  return (CLOUD_PROVIDERS as readonly string[]).includes(provider) ? provider as CloudProvider : null;
 }
 
 export type ProviderState =
@@ -89,10 +106,10 @@ async function loadOllama(call: Call, endpoint: string | null): Promise<Provider
   }
 }
 
-async function loadCloud(call: Call, provider: CloudProvider, key: string | null | undefined): Promise<ProviderState> {
+async function loadCloud(call: Call, command: string, args: Record<string, unknown>, key: string | null | undefined): Promise<ProviderState> {
   if (!key?.trim()) return { status: 'not-set-up', reason: 'No API key yet.' };
   try {
-    const models = await call<{ id: string }[]>(CLOUD_LIST_COMMANDS[provider], { apiKey: key });
+    const models = await call<{ id: string }[]>(command, { ...args, apiKey: key });
     return fromList(models.map((m) => m.id), 'No models returned.');
   } catch (error) {
     return { status: 'error', reason: errorText(error) };
@@ -142,8 +159,11 @@ export async function loadProvider(call: Call, provider: CatalogProvider, inputs
     case 'claude-code':
     case 'codex':
       return loadCliAgent(call, provider);
+    case 'openai-speech':
+    case 'openrouter-speech':
+      return loadCloud(call, 'get_cloud_speech_models', { provider }, inputs.keys[CLOUD_SPEECH[provider]]);
     default:
-      return loadCloud(call, provider, inputs.keys[provider]);
+      return loadCloud(call, CLOUD_LIST_COMMANDS[provider], {}, inputs.keys[provider]);
   }
 }
 

@@ -19,7 +19,7 @@ export function VoiceModelPicker({ catalog, onSetUp }: VoiceModelPickerProps) {
       value={voice}
       onChange={chooseVoiceModel}
       emptyText="No speech model yet"
-      setUpText="Download one in Providers"
+      setUpText="Download one or add an API key in Providers"
       onSetUp={onSetUp}
       disabled={voiceLocked}
       disabledReason={VOICE_LOCKED_REASON}

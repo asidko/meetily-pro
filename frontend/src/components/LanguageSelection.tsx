@@ -1,6 +1,7 @@
 import React from 'react';
 import { Globe } from 'lucide-react';
 import { toast } from 'sonner';
+import { isCloudSpeech, type SpeechProvider } from '@/lib/model-catalog';
 
 export interface Language {
   code: string;
@@ -115,11 +116,11 @@ const LANGUAGES: Language[] = [
 interface LanguageSelectionProps {
   selectedLanguage: string;
   onLanguageChange: (language: string) => void;
-  provider?: 'localWhisper' | 'parakeet' | 'deepgram' | 'elevenLabs' | 'groq' | 'openai';
+  provider?: SpeechProvider;
 }
 
 export function LanguageSelection({
-  selectedLanguage,
+  selectedLanguage: savedLanguage,
   onLanguageChange,
   provider = 'localWhisper'
 }: LanguageSelectionProps) {
@@ -127,7 +128,10 @@ export function LanguageSelection({
   const isParakeet = provider === 'parakeet';
   const availableLanguages = isParakeet
     ? LANGUAGES.filter(lang => lang.code === 'auto' || lang.code === 'auto-translate')
-    : LANGUAGES;
+    : isCloudSpeech(provider)
+      ? LANGUAGES.filter(lang => lang.code !== 'auto-translate')
+      : LANGUAGES;
+  const selectedLanguage = availableLanguages.some(lang => lang.code === savedLanguage) ? savedLanguage : 'auto';
 
   const handleLanguageChange = (languageCode: string) => {
     onLanguageChange(languageCode);

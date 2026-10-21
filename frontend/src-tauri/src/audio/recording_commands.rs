@@ -875,6 +875,7 @@ pub async fn stop_recording<R: Runtime>(
                 warn!("⚠️ No Parakeet engine found to unload model");
             }
         }
+        Some(provider) if crate::audio::transcription::CloudSpeechService::from_provider(provider).is_some() => {}
         _ => {
             // Default to Whisper
             info!("🎤 Unloading Whisper model...");

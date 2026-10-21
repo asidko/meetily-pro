@@ -19,7 +19,7 @@ export interface TranscriptionErrorPayload {
   error: string;
   userMessage: string;
   actionable: boolean;
-  phase: 'startup' | 'active';
+  phase: 'startup' | 'active' | 'chunk';
 }
 
 export interface ModelDownloadCompletePayload {

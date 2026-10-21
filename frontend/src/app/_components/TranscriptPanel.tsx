@@ -5,6 +5,7 @@ import { ButtonGroup } from '@/components/ui/button-group';
 import { Copy, GlobeIcon } from 'lucide-react';
 import { useTranscripts } from '@/contexts/TranscriptContext';
 import { useConfig } from '@/contexts/ConfigContext';
+import { isCloudSpeech } from '@/lib/model-catalog';
 import { useRecordingState } from '@/contexts/RecordingStateContext';
 import { usePermissionCheck } from '@/hooks/usePermissionCheck';
 import { ModalType } from '@/hooks/useModalState';
@@ -70,7 +71,7 @@ export function TranscriptPanel({
                     </span>
                   </Button>
                 )}
-                {transcriptModelConfig.provider === "localWhisper" &&
+                {(transcriptModelConfig.provider === "localWhisper" || isCloudSpeech(transcriptModelConfig.provider)) &&
                   <Button
                     variant="outline"
                     size="sm"

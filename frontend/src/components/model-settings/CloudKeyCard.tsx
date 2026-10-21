@@ -79,7 +79,7 @@ export function CloudKeyCard({ provider, inUseBy }: CloudKeyCardProps) {
         </div>
         {confirmRemove && (
           <div className="flex items-center justify-between gap-3 rounded-md bg-amber-50 p-3 text-sm text-amber-900">
-            <span>{inUseBy.join(' and ')} use {label}. They stop working until you pick another model.</span>
+            <span>{label} runs {inUseBy.join(' and ')}. They stop working until you pick another model.</span>
             <div className="flex shrink-0 gap-2">
               <Button size="sm" variant="destructive" onClick={remove} disabled={busy}>Remove</Button>
               <Button size="sm" variant="outline" onClick={() => setConfirmRemove(false)} disabled={busy}>Keep</Button>

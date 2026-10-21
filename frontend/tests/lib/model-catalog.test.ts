@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { availability, loadProvider, readyGroups, type Call, type Catalog } from '../../src/lib/model-catalog';
+import { availability, keyProvider, loadProvider, readyGroups, type Call, type Catalog } from '../../src/lib/model-catalog';
 
 function fakeCall(responses: Record<string, unknown>): { call: Call; calls: string[] } {
   const calls: string[] = [];
@@ -25,6 +25,17 @@ describe('model catalog loading', () => {
     const { call } = fakeCall({ get_anthropic_models: [{ id: 'claude-sonnet-4-5' }] });
     expect(await loadProvider(call, 'claude', { keys: { claude: 'sk-ant' }, ollamaEndpoint: null }))
       .toEqual({ status: 'ready', models: ['claude-sonnet-4-5'] });
+  });
+
+  test('cloud speech models use the key saved for the same service', async () => {
+    const { call, calls } = fakeCall({ get_cloud_speech_models: [{ id: 'gpt-transcribe' }, { id: 'gpt-4o-mini-transcribe' }] });
+    expect(await loadProvider(call, 'openai-speech', NO_INPUTS)).toEqual({ status: 'not-set-up', reason: 'No API key yet.' });
+    expect(calls).toEqual([]);
+    expect(await loadProvider(call, 'openai-speech', { keys: { openai: 'sk-1' }, ollamaEndpoint: null }))
+      .toEqual({ status: 'ready', models: ['gpt-transcribe', 'gpt-4o-mini-transcribe'] });
+    expect(keyProvider('openrouter-speech')).toBe('openrouter');
+    expect(keyProvider('groq')).toBe('groq');
+    expect(keyProvider('parakeet')).toBeNull();
   });
 
   test('unreachable ollama is an error, not a missing setup', async () => {

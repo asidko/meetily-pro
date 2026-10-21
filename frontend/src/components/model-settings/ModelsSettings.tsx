@@ -5,7 +5,7 @@ import { AlertTriangle } from 'lucide-react';
 import { useModelCatalog } from '@/hooks/useModelCatalog';
 import { useAssistantSettings } from '@/hooks/useAssistantSettings';
 import { useModelSelection } from '@/hooks/useModelSelection';
-import { SPEECH_PROVIDERS, TEXT_PROVIDERS, availability, catalogLabel, type Catalog, type CatalogProvider, type ModelChoice } from '@/lib/model-catalog';
+import { SPEECH_PROVIDERS, TEXT_PROVIDERS, availability, catalogLabel, isCloudSpeech, type Catalog, type CatalogProvider, type ModelChoice } from '@/lib/model-catalog';
 import { ProvidersSection } from './ProvidersSection';
 import { LiveAssistantSettings } from './LiveAssistantSettings';
 
@@ -71,7 +71,7 @@ export function ModelsSettings() {
     <div className="flex flex-col gap-6">
       <Section title="In use" description="Press Use next to any ready option below to switch.">
         <div className="divide-y">
-          <InUseRow label="Voice transcript" purpose="Turns speech into text while you record." catalog={catalog} choice={voice} onShow={showProvider} />
+          <InUseRow label="Voice transcript" purpose={`Turns speech into text while you record.${isCloudSpeech(voice.provider) ? ` Your audio is sent to ${catalogLabel(voice.provider)}.` : ''}`} catalog={catalog} choice={voice} onShow={showProvider} />
           <InUseRow label="AI model" purpose="Writes summaries and answers your questions during and after a call." catalog={catalog} choice={ai} onShow={showProvider} />
           <div className="pt-3">
             <LiveAssistantSettings {...assistant} />

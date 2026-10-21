@@ -7,7 +7,7 @@ import { ModelManager as WhisperModelManager } from '@/components/WhisperModelMa
 import { ParakeetModelManager } from '@/components/ParakeetModelManager';
 import { BuiltInModelManager } from '@/components/BuiltInModelManager';
 import { VOICE_LOCKED_REASON, type ModelSelection } from '@/hooks/useModelSelection';
-import { CLI_AGENTS, CLOUD_PROVIDERS, SPEECH_PROVIDERS, catalogLabel, isCliAgent, isOnDevice, type Catalog, type CatalogProvider, type CloudProvider, type ProviderState, type SpeechProvider } from '@/lib/model-catalog';
+import { CLI_AGENTS, CLOUD_PROVIDERS, CLOUD_SPEECH, CLOUD_SPEECH_PROVIDERS, SPEECH_PROVIDERS, catalogLabel, isCliAgent, isOnDevice, keyProvider, type Catalog, type CatalogProvider, type CloudProvider, type CloudSpeechProvider, type ProviderState, type SpeechProvider } from '@/lib/model-catalog';
 import { CloudKeyCard } from './CloudKeyCard';
 import { OllamaCard } from './OllamaCard';
 import { CustomServerCard } from './CustomServerCard';
@@ -15,6 +15,10 @@ import { CliAgentCard } from './CliAgentCard';
 import { UseModelButton } from './UseModelButton';
 
 type Badge = { text: string; className: string };
+
+function speechTwin(provider: CloudProvider): CloudSpeechProvider | undefined {
+  return CLOUD_SPEECH_PROVIDERS.find((speech) => CLOUD_SPEECH[speech] === provider);
+}
 
 const BADGES = {
   missing: { text: 'Not set up', className: 'bg-gray-100 text-gray-600' },
@@ -41,6 +45,7 @@ function describe(provider: CatalogProvider, state: ProviderState | undefined, h
     return { line: hasKey ? `Key saved - ${state.reason}` : 'Could not connect', badge: BADGES.unreachable };
   }
   if (onDevice) return { line: 'No models downloaded', badge: BADGES.missing };
+  if (hasKey) return { line: `Key saved - ${state.reason}`, badge: BADGES.missing };
   if (provider === 'ollama') return { line: 'Connected - no models yet', badge: BADGES.missing };
   if (provider === 'custom-openai') return { line: 'No server yet', badge: BADGES.missing };
   if (cli) return { line: state.reason, badge: BADGES.missing };
@@ -76,7 +81,8 @@ export function ProvidersSection({ catalog, refresh, open, onOpenChange, selecti
   };
 
   const row = (provider: CatalogProvider, tag: string | null, body: ReactNode) => {
-    const hasKey = !!providerApiKeys[provider as CloudProvider]?.trim();
+    const key = keyProvider(provider);
+    const hasKey = !!(key && providerApiKeys[key]?.trim());
     const state = catalog[provider];
     const { line, badge } = describe(provider, state, hasKey);
     const action = actionFor(provider, state) ?? (badge && <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${badge.className}`}>{badge.text}</span>);
@@ -94,6 +100,20 @@ export function ProvidersSection({ catalog, refresh, open, onOpenChange, selecti
     );
   };
 
+  const keyCard = (provider: CloudProvider) => {
+    const inUseBy = [
+      ai.provider === provider && 'summaries and the assistant',
+      voice.provider === speechTwin(provider) && 'the voice transcript',
+    ].filter((use): use is string => !!use);
+    return <CloudKeyCard provider={provider} inUseBy={inUseBy} />;
+  };
+
+  const cloudRows = (provider: CloudProvider) => {
+    const speech = speechTwin(provider);
+    if (!speech) return row(provider, null, keyCard(provider));
+    return [row(provider, 'Text', keyCard(provider)), row(speech, 'Speech', keyCard(provider))];
+  };
+
   return (
     <div className="space-y-5">
       <div>
@@ -107,10 +127,10 @@ export function ProvidersSection({ catalog, refresh, open, onOpenChange, selecti
       </div>
       <div>
         <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">AI services</h4>
-        <p className="mb-1 text-xs text-gray-500">Needs a server or internet. Your transcript is sent to the service you pick.</p>
+        <p className="mb-1 text-xs text-gray-500">Needs a server or internet. Speech models get your audio, the others get your transcript.</p>
         <Accordion type="single" collapsible value={open} onValueChange={onOpenChange}>
           {row('ollama', null, <OllamaCard state={catalog.ollama} onChanged={() => refresh(['ollama'])} />)}
-          {CLOUD_PROVIDERS.map((provider) => row(provider, null, <CloudKeyCard provider={provider} inUseBy={ai.provider === provider ? ['Summaries and the assistant'] : []} />))}
+          {CLOUD_PROVIDERS.map(cloudRows)}
           {row('custom-openai', null, <CustomServerCard onSaved={onCustomServerSaved} />)}
           {CLI_AGENTS.map((provider) => row(provider, null, <CliAgentCard provider={provider} state={catalog[provider]} onRecheck={() => refresh([provider])} />))}
         </Accordion>
