@@ -144,6 +144,7 @@ export default function PageContent({
               onLoadMore={onLoadMore}
               meetingId={meeting.id}
               meetingFolderPath={meeting.folder_path}
+              hasKeyTerms={typeof (meetingData.aiSummary as { key_terms?: unknown } | null)?.key_terms === 'string'}
               onRefetchTranscripts={onRefetchTranscripts}
             />
           }

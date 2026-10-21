@@ -59,17 +59,21 @@ impl MeetingChatRepository {
             .await
     }
 
-    pub async fn append_recap_once(pool: &SqlitePool, meeting_id: &str, text: &str) -> Result<(), sqlx::Error> {
+    pub async fn append_recap_once(pool: &SqlitePool, meeting_id: &str, key_terms: Option<&str>, recap: &str) -> Result<(), sqlx::Error> {
         sqlx::query(
-            "INSERT INTO meeting_chat_messages (meeting_id, position, role, text, error, created_at) SELECT * FROM (SELECT ?, COALESCE(MAX(position), 0) + 1, ?, ?, 0, ? FROM meeting_chat_messages WHERE meeting_id = ?) WHERE NOT EXISTS (SELECT 1 FROM meeting_chat_messages WHERE meeting_id = ? AND role = ?)",
+            "INSERT INTO meeting_chat_messages (meeting_id, position, role, text, error, created_at) \
+             SELECT ?1, last.position + entry.offset, entry.role, entry.text, 0, ?2 \
+             FROM (SELECT COALESCE(MAX(position), 0) AS position FROM meeting_chat_messages WHERE meeting_id = ?1) AS last \
+             JOIN (SELECT 1 AS offset, ?3 AS role, ?4 AS text WHERE ?4 IS NOT NULL UNION ALL SELECT 2, ?5, ?6) AS entry \
+             WHERE NOT EXISTS (SELECT 1 FROM meeting_chat_messages WHERE meeting_id = ?1 AND role = ?5) \
+             ORDER BY entry.offset",
         )
         .bind(meeting_id)
-        .bind(ChatRole::Recap.as_str())
-        .bind(text)
         .bind(chrono::Utc::now().to_rfc3339())
-        .bind(meeting_id)
-        .bind(meeting_id)
+        .bind(ChatRole::KeyTerms.as_str())
+        .bind(key_terms)
         .bind(ChatRole::Recap.as_str())
+        .bind(recap)
         .execute(pool)
         .await?;
         Ok(())
@@ -147,12 +151,21 @@ mod tests {
         let pool = pool().await;
         MeetingChatRepository::append(&pool, "m1", &[message(ChatRole::User, "Who owns it?", false)]).await.unwrap();
         assert!(!MeetingChatRepository::has_recap(&pool, "m1").await.unwrap());
-        MeetingChatRepository::append_recap_once(&pool, "m1", "Recap").await.unwrap();
+        MeetingChatRepository::append_recap_once(&pool, "m1", Some("Terms"), "Recap").await.unwrap();
         assert!(MeetingChatRepository::has_recap(&pool, "m1").await.unwrap());
-        MeetingChatRepository::append_recap_once(&pool, "m1", "Recap again").await.unwrap();
+        MeetingChatRepository::append_recap_once(&pool, "m1", Some("Terms again"), "Recap again").await.unwrap();
         let chat = MeetingChatRepository::get_for_meeting(&pool, "m1").await.unwrap();
         let roles: Vec<(ChatRole, &str)> = chat.iter().map(|m| (m.role, m.text.as_str())).collect();
-        assert_eq!(roles, vec![(ChatRole::User, "Who owns it?"), (ChatRole::Recap, "Recap")]);
+        assert_eq!(roles, vec![(ChatRole::User, "Who owns it?"), (ChatRole::KeyTerms, "Terms"), (ChatRole::Recap, "Recap")]);
+    }
+
+    #[tokio::test]
+    async fn a_recap_without_key_terms_comes_alone() {
+        let pool = pool().await;
+        MeetingChatRepository::append_recap_once(&pool, "m1", None, "Recap").await.unwrap();
+        let chat = MeetingChatRepository::get_for_meeting(&pool, "m1").await.unwrap();
+        let roles: Vec<ChatRole> = chat.iter().map(|m| m.role).collect();
+        assert_eq!(roles, vec![ChatRole::Recap]);
     }
 
     #[tokio::test]

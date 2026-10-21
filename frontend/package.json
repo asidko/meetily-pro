@@ -1,6 +1,7 @@
 {
     "name": "meetily",
-    "version": "1.7.0",
+    "version": "1.8.0",
+    "author": "Alexander Sidko",
     "private": true,
     "packageManager": "pnpm@9.15.9",
     "main": "electron/main.js",

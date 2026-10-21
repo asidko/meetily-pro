@@ -1,5 +1,9 @@
 use crate::api::TranscriptSegment;
-use anyhow::Result;
+use crate::audio::transcription::{CloudSpeechProvider, CloudSpeechService, TranscriptionProvider};
+use crate::audio::vad::SpeechSegment;
+use anyhow::{anyhow, Result};
+use futures_util::stream::{self, StreamExt, TryStreamExt};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use log::{debug, info};
 use once_cell::sync::Lazy;
 use std::path::Path;
@@ -17,7 +21,11 @@ pub(crate) async fn acquire_engine_lifecycle_lock() -> OwnedMutexGuard<()> {
 /// Unload the transcription engine after a batch job (import or retranscription).
 /// Skips unloading if a live recording is currently in progress, since recording
 /// uses the same global engine instances.
-pub(crate) async fn unload_engine_after_batch(use_parakeet: bool) {
+pub(crate) async fn unload_engine_after_batch(provider: Option<&str>) {
+    if provider.and_then(CloudSpeechService::from_provider).is_some() {
+        return;
+    }
+    let use_parakeet = provider == Some("parakeet");
     let _engine_lifecycle_guard = acquire_engine_lifecycle_lock().await;
 
     if crate::audio::recording_commands::is_recording().await {
@@ -44,6 +52,72 @@ pub(crate) async fn unload_engine_after_batch(use_parakeet: bool) {
             e.unload_model().await;
         }
     }
+}
+
+const CLOUD_PARALLEL_REQUESTS: usize = 4;
+const MIN_SEGMENT_SAMPLES: usize = 1600;
+const CANCEL_POLL: std::time::Duration = std::time::Duration::from_millis(250);
+
+pub(crate) async fn cloud_batch_provider<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    provider: Option<&str>,
+    model: Option<&str>,
+    prompt: Option<String>,
+) -> Result<Option<CloudSpeechProvider>> {
+    let Some(service) = provider.and_then(CloudSpeechService::from_provider) else {
+        return Ok(None);
+    };
+    let model = model.ok_or_else(|| anyhow!("Pick a {} speech model first", service.label()))?;
+    crate::audio::transcription::engine::cloud_speech_provider(app, service, model.to_string(), prompt)
+        .await
+        .map(Some)
+        .map_err(|e| anyhow!(e))
+}
+
+pub(crate) async fn transcribe_cloud_segments(
+    cloud: &CloudSpeechProvider,
+    segments: &[SpeechSegment],
+    language: Option<String>,
+    on_progress: impl Fn(usize, usize),
+    cancelled: impl Fn() -> bool,
+) -> Result<Vec<(String, f64, f64)>> {
+    let speech: Vec<&SpeechSegment> = segments.iter().filter(|segment| segment.samples.len() >= MIN_SEGMENT_SAMPLES).collect();
+    let done = AtomicUsize::new(0);
+    let progress = || on_progress(done.fetch_add(1, Ordering::Relaxed) + 1, speech.len());
+    let jobs: Vec<_> = speech
+        .iter()
+        .enumerate()
+        .map(|(index, segment)| transcribe_cloud_segment(cloud, index, segment, language.clone(), &progress, &cancelled))
+        .collect();
+    let transcripts: Vec<Option<(String, f64, f64)>> = stream::iter(jobs)
+        .buffered(CLOUD_PARALLEL_REQUESTS)
+        .try_collect()
+        .await?;
+    Ok(transcripts.into_iter().flatten().collect())
+}
+
+async fn transcribe_cloud_segment(
+    cloud: &CloudSpeechProvider,
+    index: usize,
+    segment: &SpeechSegment,
+    language: Option<String>,
+    progress: &impl Fn(),
+    cancelled: &impl Fn() -> bool,
+) -> Result<Option<(String, f64, f64)>> {
+    let transcribe = cloud.transcribe(segment.samples.clone(), language);
+    tokio::pin!(transcribe);
+    let result = loop {
+        if cancelled() {
+            return Err(anyhow!("Cancelled"));
+        }
+        tokio::select! {
+            result = &mut transcribe => break result,
+            _ = tokio::time::sleep(CANCEL_POLL) => {}
+        }
+    }
+    .map_err(|e| anyhow!("{} transcription failed on segment {}: {}", cloud.provider_name(), index, e.detail()))?;
+    progress();
+    Ok((!result.text.trim().is_empty()).then(|| (result.text, segment.start_timestamp_ms, segment.end_timestamp_ms)))
 }
 
 /// Create transcript segments from transcription results.

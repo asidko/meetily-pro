@@ -266,19 +266,18 @@ pub async fn start_import<R: Runtime>(
     // Reset cancellation flag
     IMPORT_CANCELLED.store(false, Ordering::SeqCst);
 
-    let use_parakeet = provider.as_deref() == Some("parakeet");
     let result = run_import(
         app.clone(),
         source_path,
         title,
         language,
         model,
-        provider,
+        provider.clone(),
     )
     .await;
 
     // Unload the engine after the batch job (success, failure, or cancellation)
-    super::common::unload_engine_after_batch(use_parakeet).await;
+    super::common::unload_engine_after_batch(provider.as_deref()).await;
 
     // Guard will automatically clear flag on drop
     // No need for manual: IMPORT_IN_PROGRESS.store(false, Ordering::SeqCst);
@@ -509,12 +508,13 @@ async fn run_import<R: Runtime>(
     emit_progress(&app, "transcribing", 30, "Loading transcription engine...");
 
     // Initialize the appropriate engine
-    let whisper_engine = if !use_parakeet && total_segments > 0 {
+    let cloud_engine = super::common::cloud_batch_provider(&app, provider.as_deref(), model.as_deref(), None).await?;
+    let whisper_engine = if cloud_engine.is_none() && !use_parakeet && total_segments > 0 {
         Some(get_or_init_whisper(&app, model.as_deref()).await?)
     } else {
         None
     };
-    let parakeet_engine = if use_parakeet && total_segments > 0 {
+    let parakeet_engine = if cloud_engine.is_none() && use_parakeet && total_segments > 0 {
         Some(get_or_init_parakeet(&app, model.as_deref()).await?)
     } else {
         None
@@ -549,64 +549,85 @@ async fn run_import<R: Runtime>(
     let mut all_transcripts: Vec<(String, f64, f64)> = Vec::new();
     let mut total_confidence = 0.0f32;
 
-    for (i, segment) in processable_segments.iter().enumerate() {
-        if IMPORT_CANCELLED.load(Ordering::SeqCst) {
+    if let Some(cloud) = &cloud_engine {
+        let cancelled = || IMPORT_CANCELLED.load(Ordering::SeqCst);
+        let transcripts = super::common::transcribe_cloud_segments(
+            cloud,
+            &processable_segments,
+            language.clone(),
+            |done, total| {
+                let progress = 30 + ((done as f32 / total as f32) * 50.0) as u32;
+                emit_progress(&app, "transcribing", progress, &format!("Transcribed {} of {} segments...", done, total));
+            },
+            cancelled,
+        )
+        .await;
+        if cancelled() {
             let _ = std::fs::remove_dir_all(&meeting_folder);
             return Err(anyhow!("Import cancelled"));
         }
+        all_transcripts = transcripts?;
+        total_confidence = 0.9 * all_transcripts.len() as f32;
+    } else {
+        for (i, segment) in processable_segments.iter().enumerate() {
+            if IMPORT_CANCELLED.load(Ordering::SeqCst) {
+                let _ = std::fs::remove_dir_all(&meeting_folder);
+                return Err(anyhow!("Import cancelled"));
+            }
 
-        let progress = 30 + ((i as f32 / processable_count.max(1) as f32) * 50.0) as u32;
-        let segment_duration_sec = (segment.end_timestamp_ms - segment.start_timestamp_ms) / 1000.0;
-        emit_progress(
-            &app,
-            "transcribing",
-            progress,
-            &format!(
-                "Transcribing segment {} of {} ({:.1}s)...",
-                i + 1,
-                processable_count,
-                segment_duration_sec
-            ),
-        );
-
-        // Skip very short segments
-        if segment.samples.len() < 1600 {
-            debug!(
-                "Skipping short segment {} with {} samples",
-                i,
-                segment.samples.len()
+            let progress = 30 + ((i as f32 / processable_count.max(1) as f32) * 50.0) as u32;
+            let segment_duration_sec = (segment.end_timestamp_ms - segment.start_timestamp_ms) / 1000.0;
+            emit_progress(
+                &app,
+                "transcribing",
+                progress,
+                &format!(
+                    "Transcribing segment {} of {} ({:.1}s)...",
+                    i + 1,
+                    processable_count,
+                    segment_duration_sec
+                ),
             );
-            continue;
-        }
 
-        // Transcribe
-        let (text, conf) = if use_parakeet {
-            let engine = parakeet_engine.as_ref().unwrap();
-            let text = engine
-                .transcribe_audio(segment.samples.clone())
-                .await
-                .map_err(|e| anyhow!("Parakeet transcription failed on segment {}: {}", i, e))?;
-            (text, 0.9f32)
-        } else {
-            let engine = whisper_engine.as_ref().unwrap();
-            let (text, conf, _) = engine
-                .transcribe_audio_with_confidence(segment.samples.clone(), language.clone())
-                .await
-                .map_err(|e| anyhow!("Whisper transcription failed on segment {}: {}", i, e))?;
-            (text, conf)
-        };
+            // Skip very short segments
+            if segment.samples.len() < 1600 {
+                debug!(
+                    "Skipping short segment {} with {} samples",
+                    i,
+                    segment.samples.len()
+                );
+                continue;
+            }
 
-        let trimmed = text.trim();
-        if !trimmed.is_empty() {
-            debug!(
-                "Segment {}/{}: {:.1}s, conf={:.2}, text='{}'",
-                i + 1, processable_count, segment_duration_sec, conf,
-                if trimmed.len() > 80 { let mut end = 80; while !trimmed.is_char_boundary(end) { end -= 1; } &trimmed[..end] } else { trimmed }
-            );
-            all_transcripts.push((text, segment.start_timestamp_ms, segment.end_timestamp_ms));
-            total_confidence += conf;
-        } else {
-            debug!("Segment {}/{}: {:.1}s — empty transcription", i + 1, processable_count, segment_duration_sec);
+            // Transcribe
+            let (text, conf) = if use_parakeet {
+                let engine = parakeet_engine.as_ref().unwrap();
+                let text = engine
+                    .transcribe_audio(segment.samples.clone())
+                    .await
+                    .map_err(|e| anyhow!("Parakeet transcription failed on segment {}: {}", i, e))?;
+                (text, 0.9f32)
+            } else {
+                let engine = whisper_engine.as_ref().unwrap();
+                let (text, conf, _) = engine
+                    .transcribe_audio_with_confidence(segment.samples.clone(), language.clone())
+                    .await
+                    .map_err(|e| anyhow!("Whisper transcription failed on segment {}: {}", i, e))?;
+                (text, conf)
+            };
+
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                debug!(
+                    "Segment {}/{}: {:.1}s, conf={:.2}, text='{}'",
+                    i + 1, processable_count, segment_duration_sec, conf,
+                    if trimmed.len() > 80 { let mut end = 80; while !trimmed.is_char_boundary(end) { end -= 1; } &trimmed[..end] } else { trimmed }
+                );
+                all_transcripts.push((text, segment.start_timestamp_ms, segment.end_timestamp_ms));
+                total_confidence += conf;
+            } else {
+                debug!("Segment {}/{}: {:.1}s — empty transcription", i + 1, processable_count, segment_duration_sec);
+            }
         }
     }
 

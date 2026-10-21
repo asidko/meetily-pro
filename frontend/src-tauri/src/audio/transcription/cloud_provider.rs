@@ -62,6 +62,7 @@ pub struct CloudSpeechProvider {
     model: String,
     client: Client,
     key_rejected: AtomicBool,
+    prompt: Option<String>,
 }
 
 enum Failure {
@@ -84,7 +85,12 @@ impl CloudSpeechProvider {
             .connect_timeout(Duration::from_secs(5))
             .build()
             .unwrap_or_default();
-        Self { service, base_url, api_key, model, client, key_rejected: AtomicBool::new(false) }
+        Self { service, base_url, api_key, model, client, key_rejected: AtomicBool::new(false), prompt: None }
+    }
+
+    pub fn with_prompt(mut self, prompt: Option<String>) -> Self {
+        self.prompt = prompt;
+        self
     }
 
     fn rejected_key(&self) -> String {
@@ -96,7 +102,10 @@ impl CloudSpeechProvider {
             .file_name("speech.wav")
             .mime_str("audio/wav")
             .expect("audio/wav is a valid mime type");
-        let form = Form::new().text("model", self.model.clone()).part("file", file);
+        let mut form = Form::new().text("model", self.model.clone()).part("file", file);
+        if let Some(prompt) = &self.prompt {
+            form = form.text("prompt", prompt.clone());
+        }
         match language {
             Some(language) if self.service == CloudSpeechService::OpenAI && self.model.starts_with("gpt-transcribe") => {
                 form.text("languages[]", language.to_string())
@@ -336,7 +345,8 @@ mod tests {
     #[tokio::test]
     async fn sends_wav_audio_with_model_and_language_and_returns_the_text() {
         let (address, server) = serve(vec![reply("200 OK", r#"{"text":" Budget review moves to Friday. "}"#)]).await;
-        let provider = CloudSpeechProvider::with_base_url(CloudSpeechService::OpenAI, address, "sk-test".into(), "gpt-transcribe".into());
+        let provider = CloudSpeechProvider::with_base_url(CloudSpeechService::OpenAI, address, "sk-test".into(), "gpt-transcribe".into())
+            .with_prompt(Some("Meeting: budget review".into()));
 
         let result = provider.transcribe(vec![0.1; 16_000], Some("de".into())).await.unwrap();
 
@@ -346,6 +356,7 @@ mod tests {
         assert!(request.contains("authorization: Bearer sk-test") || request.contains("Authorization: Bearer sk-test"));
         assert!(request.contains("name=\"model\"\r\n\r\ngpt-transcribe"));
         assert!(request.contains("name=\"languages[]\"\r\n\r\nde"));
+        assert!(request.contains("name=\"prompt\"\r\n\r\nMeeting: budget review"));
         assert!(request.contains("filename=\"speech.wav\""));
         assert!(request.contains("RIFF"));
     }

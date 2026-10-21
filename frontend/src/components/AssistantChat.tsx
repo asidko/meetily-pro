@@ -71,6 +71,13 @@ const ChatBubble = memo(function ChatBubble({ message }: { message: ChatMessage 
       </details>
     );
   }
+  if (message.role === 'key_terms') {
+    return (
+      <div className="rounded-lg border border-dashed border-blue-100 px-3 py-1.5 text-xs text-gray-600">
+        <span className="font-medium text-gray-700">Topic and key terms: </span>{message.text}
+      </div>
+    );
+  }
   if (message.role === 'recap') {
     return (
       <div className="group relative rounded-lg border border-blue-100 bg-blue-50/70 py-2 pl-3 pr-7 text-sm text-gray-800">

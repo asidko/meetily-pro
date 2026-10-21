@@ -1,5 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { useConfig } from '@/contexts/ConfigContext';
+import { CLOUD_SPEECH_PROVIDERS, catalogLabel, loadProvider, type Call, type CloudSpeechProvider } from '@/lib/model-catalog';
 
 export interface RawModelInfo {
   name: string;
@@ -8,10 +10,10 @@ export interface RawModelInfo {
 }
 
 export interface ModelOption {
-  provider: 'whisper' | 'parakeet';
+  provider: 'whisper' | 'parakeet' | CloudSpeechProvider;
   name: string;
   displayName: string;
-  size_mb: number;
+  detail: string;
 }
 
 interface TranscriptModelConfig {
@@ -29,6 +31,7 @@ interface TranscriptModelConfig {
  * @returns Object containing available models, selected model key, loading state, and fetch function
  */
 export function useTranscriptionModels(transcriptModelConfig: TranscriptModelConfig | undefined) {
+  const { providerApiKeys } = useConfig();
   const [availableModels, setAvailableModels] = useState<ModelOption[]>([]);
   const [selectedModelKey, setSelectedModelKey] = useState<string>('');
   const [loadingModels, setLoadingModels] = useState(false);
@@ -54,7 +57,7 @@ export function useTranscriptionModels(transcriptModelConfig: TranscriptModelCon
           provider: 'whisper' as const,
           name: m.name,
           displayName: `🏠 Whisper: ${m.name}`,
-          size_mb: m.size_mb,
+          detail: `${Math.round(m.size_mb)} MB`,
         }));
       allModels.push(...availableWhisper);
     } catch (err) {
@@ -70,25 +73,31 @@ export function useTranscriptionModels(transcriptModelConfig: TranscriptModelCon
           provider: 'parakeet' as const,
           name: m.name,
           displayName: `⚡ Parakeet: ${m.name}`,
-          size_mb: m.size_mb,
+          detail: `${Math.round(m.size_mb)} MB`,
         }));
       allModels.push(...availableParakeet);
     } catch (err) {
       console.error('Failed to fetch Parakeet models:', err);
     }
 
-    setAvailableModels(allModels);
-
     // Set default model based on user's saved configuration
     const configuredProvider = transcriptModelConfig?.provider || '';
     const configuredModel = transcriptModelConfig?.model || '';
 
+    const cloudStates = await Promise.all(CLOUD_SPEECH_PROVIDERS.map((provider) =>
+      loadProvider(invoke as Call, provider, { keys: providerApiKeys, ollamaEndpoint: null })));
+    CLOUD_SPEECH_PROVIDERS.forEach((provider, index) => {
+      const state = cloudStates[index];
+      if (state.status !== 'ready') return;
+      state.models.forEach((name) => allModels.push({ provider, name, displayName: `${catalogLabel(provider)}: ${name}`, detail: 'cloud' }));
+    });
+
+    setAvailableModels(allModels);
+
     // Try to match the configured model
     // Note: 'localWhisper' in config maps to 'whisper' provider in model list
     const configuredMatch = allModels.find(
-      (m) =>
-        (configuredProvider === 'localWhisper' && m.provider === 'whisper' && m.name === configuredModel) ||
-        (configuredProvider === 'parakeet' && m.provider === 'parakeet' && m.name === configuredModel)
+      (m) => m.provider === (configuredProvider === 'localWhisper' ? 'whisper' : configuredProvider) && m.name === configuredModel
     );
 
     // Only set default model if user hasn't manually selected one
@@ -103,7 +112,7 @@ export function useTranscriptionModels(transcriptModelConfig: TranscriptModelCon
     }
 
     setLoadingModels(false);
-  }, [transcriptModelConfig]);
+  }, [transcriptModelConfig, providerApiKeys]);
 
   // Reset user selection tracking (call when dialog opens fresh)
   const resetSelection = useCallback(() => {
