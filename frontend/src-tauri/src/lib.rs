@@ -49,6 +49,7 @@ pub mod anthropic;
 pub mod groq;
 pub mod openrouter;
 pub mod parakeet_engine;
+pub mod release_check;
 pub mod state;
 pub mod summary;
 pub mod tray;
@@ -464,8 +465,6 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init())
         .manage(whisper_engine::parallel_commands::ParallelProcessorState::new())
         .manage(Arc::new(RwLock::new(
             None::<notifications::manager::NotificationManager<tauri::Wry>>,
@@ -675,6 +674,7 @@ pub fn run() {
             assistant::commands::api_get_meeting_chat,
             assistant::commands::api_ask_meeting_assistant,
             assistant::commands::api_compact_meeting_chat,
+            assistant::commands::api_dismiss_meeting_chat_error,
             assistant::commands::api_import_assistant_snapshot,
             // Playback device detection (Bluetooth warning)
             audio::recording_commands::get_active_audio_output,
@@ -714,10 +714,12 @@ pub fn run() {
             api::api_get_meeting_transcripts,
             api::api_save_meeting_title,
             api::api_save_transcript,
+            api::api_update_transcript_text,
             api::open_meeting_folder,
             api::test_backend_connection,
             api::debug_backend_connection,
             api::open_external_url,
+            release_check::check_latest_release,
             // Custom OpenAI commands
             api::api_save_custom_openai_config,
             api::api_get_custom_openai_config,

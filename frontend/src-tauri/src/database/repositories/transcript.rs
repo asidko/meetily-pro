@@ -143,4 +143,40 @@ impl TranscriptsRepository {
             None => transcript.chars().take(200).collect(), // Fallback to the start of the transcript
         }
     }
+
+    pub async fn update_text(pool: &SqlitePool, meeting_id: &str, transcript_id: &str, text: &str) -> Result<bool, SqlxError> {
+        let result = sqlx::query("UPDATE transcripts SET transcript = ? WHERE id = ? AND meeting_id = ?")
+            .bind(text)
+            .bind(transcript_id)
+            .bind(meeting_id)
+            .execute(pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    #[tokio::test]
+    async fn editing_a_line_changes_only_that_line_of_that_meeting() {
+        let pool = SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        sqlx::query("INSERT INTO meetings (id, title, created_at, updated_at) VALUES ('m1', 'Sync', '2026-10-14T10:00:00Z', '2026-10-14T10:00:00Z')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO transcripts (id, meeting_id, transcript, timestamp) VALUES ('t1', 'm1', 'the fire and steam', 'x'), ('t2', 'm1', 'clone', 'x')")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        assert!(TranscriptsRepository::update_text(&pool, "m1", "t1", "the final migration").await.unwrap());
+        assert!(!TranscriptsRepository::update_text(&pool, "other", "t2", "hijack").await.unwrap());
+
+        let texts: Vec<String> = sqlx::query_scalar("SELECT transcript FROM transcripts ORDER BY id").fetch_all(&pool).await.unwrap();
+        assert_eq!(texts, vec!["the final migration", "clone"]);
+    }
 }

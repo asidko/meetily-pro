@@ -108,6 +108,8 @@ pub struct Suggestion {
     pub dismissed: bool,
     #[serde(default)]
     pub missed_ticks: u8,
+    #[serde(default)]
+    pub after_chat: Option<usize>,
 }
 
 #[derive(Debug, Default, Deserialize, PartialEq)]
@@ -515,6 +517,7 @@ pub fn reconcile(
             pinned: false,
             dismissed: false,
             missed_ticks: 0,
+            after_chat: None,
         });
         added += 1;
     }
@@ -596,6 +599,7 @@ mod tests {
             pinned: false,
             dismissed: false,
             missed_ticks: 0,
+            after_chat: None,
         }
     }
 

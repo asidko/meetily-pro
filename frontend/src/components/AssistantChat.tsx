@@ -1,14 +1,15 @@
 'use client';
 
-import { memo, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { Fragment, memo, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Copy, Send } from 'lucide-react';
+import { Copy, Send, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { COMPACT_FROM_PERCENT, contextPercent, splitCitations, type ChatContext, type ChatMessage } from '@/lib/live-assistant';
 import { SCROLL_TO_SEGMENT_EVENT } from '@/components/VirtualizedTranscriptView';
+import { useAutoHeight } from '@/hooks/useAutoHeight';
 
 function scrollToSegment(atSeconds: number) {
   window.dispatchEvent(new CustomEvent(SCROLL_TO_SEGMENT_EVENT, { detail: { atSeconds } }));
@@ -55,7 +56,20 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-const ChatBubble = memo(function ChatBubble({ message }: { message: ChatMessage }) {
+export function ErrorNote({ children, onClose, className = 'text-sm' }: { children: ReactNode; onClose?: () => void; className?: string }) {
+  return (
+    <div role="alert" className={`relative rounded-lg bg-red-50 py-2 pl-3 pr-7 text-red-700 ${className}`}>
+      <div className="max-h-40 overflow-y-auto whitespace-pre-wrap break-words">{children}</div>
+      {onClose && (
+        <button type="button" className="absolute right-1 top-1 rounded p-1 text-red-400 hover:text-red-700" title="Close" aria-label="Close" onClick={onClose}>
+          <X size={12} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+const ChatBubble = memo(function ChatBubble({ message, onDismiss }: { message: ChatMessage; onDismiss?: (id: string) => void }) {
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
@@ -90,9 +104,9 @@ const ChatBubble = memo(function ChatBubble({ message }: { message: ChatMessage 
   }
   if (message.error) {
     return (
-      <div className="max-w-[90%] rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 whitespace-pre-wrap break-words">
+      <ErrorNote className="max-w-[90%] text-sm" onClose={onDismiss && (() => onDismiss(message.id))}>
         <CitedText text={message.text} />
-      </div>
+      </ErrorNote>
     );
   }
   return (
@@ -111,24 +125,34 @@ const ChatBubble = memo(function ChatBubble({ message }: { message: ChatMessage 
 interface ChatThreadProps {
   messages: ChatMessage[];
   pending: boolean;
-  emptyHint: string;
+  emptyHint?: string;
   lead?: ReactNode;
   trail?: ReactNode;
+  after?: (count: number) => ReactNode;
+  followKey?: string | number;
+  hidden?: ReadonlySet<string>;
+  onDismissError?: (id: string) => void;
 }
 
-export function ChatThread({ messages, pending, emptyHint, lead, trail }: ChatThreadProps) {
+export function ChatThread({ messages, pending, emptyHint, lead, trail, after, followKey, hidden, onDismissError }: ChatThreadProps) {
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (messages.length === 0 && !pending) return;
+    if (messages.length === 0 && !pending && !followKey) return;
     endRef.current?.scrollIntoView({ block: 'end' });
-  }, [messages.length, pending]);
+  }, [messages.length, pending, followKey]);
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
       {lead}
-      {messages.length === 0 && !pending && <p className="text-xs text-gray-500 text-center pt-2 px-2">{emptyHint}</p>}
-      {messages.map((message) => <ChatBubble key={message.id} message={message} />)}
+      {emptyHint && messages.length === 0 && !pending && <p className="text-xs text-gray-500 text-center pt-2 px-2">{emptyHint}</p>}
+      {after?.(0)}
+      {messages.map((message, index) => (
+        <Fragment key={message.id}>
+          {!hidden?.has(message.id) && <ChatBubble message={message} onDismiss={onDismissError} />}
+          {after?.(index + 1)}
+        </Fragment>
+      ))}
       {trail}
       {pending && <div className="w-fit rounded-lg bg-gray-100 text-gray-500 px-3 py-2 text-sm animate-pulse">Thinking...</div>}
       <div ref={endRef} />
@@ -197,12 +221,7 @@ export function ChatInput({ placeholder, disabled, canSend, onSend, context, onC
   const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => {
-    const input = inputRef.current;
-    if (!input) return;
-    input.style.height = 'auto';
-    input.style.height = `${Math.min(input.scrollHeight, MAX_INPUT_HEIGHT)}px`;
-  }, [draft]);
+  useAutoHeight(inputRef, draft, MAX_INPUT_HEIGHT);
 
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();

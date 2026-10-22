@@ -25,6 +25,7 @@ interface UsePaginatedTranscriptsReturn {
     loadMore: (all?: boolean) => Promise<void>;
     reset: () => void;
     refetch: () => Promise<void>;
+    updateText: (id: string, text: string) => void;
 }
 
 /**
@@ -202,6 +203,10 @@ export function usePaginatedTranscripts({
         };
     }, [meetingId, reset, refetch]);
 
+    const updateText = useCallback((id: string, text: string) => {
+        setTranscripts(prev => prev.map(t => (t.id === id ? { ...t, text } : t)));
+    }, []);
+
     // Convert to segments (memoized)
     const segments = useMemo(() =>
         convertTranscriptsToSegments(transcripts),
@@ -221,5 +226,6 @@ export function usePaginatedTranscripts({
         loadMore,
         reset,
         refetch,
+        updateText,
     };
 }

@@ -105,6 +105,15 @@ pub async fn api_compact_meeting_chat<R: Runtime>(app: AppHandle<R>, meeting_id:
     meeting_chat::compact(&app, &meeting_id).await
 }
 
+#[tauri::command]
+pub async fn api_dismiss_meeting_chat_error<R: Runtime>(
+    app: AppHandle<R>,
+    meeting_id: String,
+    message_id: String,
+) -> Result<(), String> {
+    meeting_chat::dismiss_error(&app, &meeting_id, &message_id).await
+}
+
 async fn store_session(
     state: &AppState,
     meeting_id: &str,
@@ -141,6 +150,8 @@ pub async fn api_save_meeting_assistant<R: Runtime>(
     state: tauri::State<'_, AppState>,
     meeting_id: String,
 ) -> Result<(), String> {
-    let session = service::snapshot(&app);
-    store_session(&state, &meeting_id, &session.suggestions, &session.chat).await
+    let (suggestions, chat) = service::last_session(&app);
+    store_session(&state, &meeting_id, &suggestions, &chat).await?;
+    service::on_meeting_saved(&app);
+    Ok(())
 }

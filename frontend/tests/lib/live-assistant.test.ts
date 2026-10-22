@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   buildPinnedPromptSection,
+  chatTimeline,
   contextPercent,
   describeAge,
   formatClock,
@@ -47,6 +48,17 @@ describe('live assistant helpers', () => {
       item('s4'),
     ]);
     expect(ordered.map((s) => s.id)).toEqual(['s2', 's4', 's1']);
+  });
+
+  test('places tips after the chat message that came before them, oldest first', () => {
+    const slots = chatTimeline([
+      item('s3', { after_chat: 2 }),
+      item('s1'),
+      item('s2', { after_chat: 2 }),
+      item('s4', { after_chat: 9 }),
+      item('s5', { dismissed: true }),
+    ], 2);
+    expect(slots.map((slot) => slot.map((s) => s.id))).toEqual([['s1'], [], ['s2', 's3', 's4']]);
   });
 
   test('formats clock values', () => {

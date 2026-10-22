@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 import { useUpdateCheck } from '@/hooks/useUpdateCheck';
 import { UpdateInfo } from '@/services/updateService';
 import { UpdateDialog } from './UpdateDialog';
-import { setUpdateDialogCallback, showUpdateNotification } from './UpdateNotification';
+import { checkForUpdatesNow, setUpdateDialogCallback, showUpdateNotification } from './UpdateNotification';
 
 interface UpdateCheckContextType {
   updateInfo: UpdateInfo | null;
@@ -17,6 +17,7 @@ const UpdateCheckContext = createContext<UpdateCheckContextType | undefined>(und
 
 export function UpdateCheckProvider({ children }: { children: React.ReactNode }) {
   const [showDialog, setShowDialog] = useState(false);
+  const [manualInfo, setManualInfo] = useState<UpdateInfo | null>(null);
 
   const handleShowDialog = useCallback(() => {
     setShowDialog(true);
@@ -41,14 +42,16 @@ export function UpdateCheckProvider({ children }: { children: React.ReactNode })
 
   // Listen for tray menu events
   useEffect(() => {
-    const handleTrayCheck = () => {
-      checkForUpdates(true); // Force check from tray
+    const handleTrayCheck = async () => {
+      const info = await checkForUpdatesNow();
+      if (!info?.available) return;
+      setManualInfo(info);
       setShowDialog(true);
     };
 
     window.addEventListener('check-updates-from-tray', handleTrayCheck);
     return () => window.removeEventListener('check-updates-from-tray', handleTrayCheck);
-  }, [checkForUpdates]);
+  }, []);
 
   return (
     <UpdateCheckContext.Provider
@@ -63,7 +66,7 @@ export function UpdateCheckProvider({ children }: { children: React.ReactNode })
       <UpdateDialog
         open={showDialog}
         onOpenChange={setShowDialog}
-        updateInfo={updateInfo}
+        updateInfo={manualInfo ?? updateInfo}
       />
     </UpdateCheckContext.Provider>
   );

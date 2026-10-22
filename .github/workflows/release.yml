@@ -134,7 +134,7 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build app
         working-directory: frontend
-        run: pnpm tauri build --bundles ${{ matrix.bundles }} --config '{"bundle":{"createUpdaterArtifacts":false}}'
+        run: pnpm tauri build --bundles ${{ matrix.bundles }}
       - name: Smoke test packaged app
         run: |
           if [ "$RUNNER_OS" = macOS ]; then

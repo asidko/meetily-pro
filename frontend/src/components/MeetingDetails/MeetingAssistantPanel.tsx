@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Sparkles } from 'lucide-react';
-import { ChatInput, ChatThread } from '@/components/AssistantChat';
+import { ChatInput, ChatThread, ErrorNote } from '@/components/AssistantChat';
 import { SuggestionCard } from '@/components/SuggestionCard';
 import { useMeetingChat } from '@/hooks/meeting-details/useMeetingChat';
 import { useMeetingSuggestions } from '@/hooks/meeting-details/useMeetingSuggestions';
@@ -20,7 +20,8 @@ interface MeetingAssistantPanelProps {
 }
 
 export function MeetingAssistantPanel({ meetingId, hasTranscript, summaryStatus, summaryError, hasModel, onRetrySummary }: MeetingAssistantPanelProps) {
-  const { messages, context, answering, ask, compact, reload } = useMeetingChat(meetingId);
+  const { messages, context, answering, ask, compact, reload, dismissError } = useMeetingChat(meetingId);
+  const [summaryErrorHidden, setSummaryErrorHidden] = useState(false);
   const { suggestions, dismiss } = useMeetingSuggestions(meetingId);
   const canAsk = hasTranscript && !answering;
   const writingSummary = summaryStatus === 'processing';
@@ -28,16 +29,17 @@ export function MeetingAssistantPanel({ meetingId, hasTranscript, summaryStatus,
   const previousSummaryStatus = useRef(summaryStatus);
   useEffect(() => {
     if (previousSummaryStatus.current === 'processing' && summaryStatus === 'completed') void reload();
+    if (summaryStatus !== previousSummaryStatus.current) setSummaryErrorHidden(false);
     previousSummaryStatus.current = summaryStatus;
   }, [summaryStatus, reload]);
 
   let summaryNote = null;
-  if (summaryStatus === 'error') {
+  if (summaryStatus === 'error' && !summaryErrorHidden) {
     summaryNote = (
-      <div role="alert" className="w-fit max-w-[90%] rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+      <ErrorNote className="w-fit max-w-[90%] text-sm" onClose={() => setSummaryErrorHidden(true)}>
         {summaryError || 'The summary could not be written.'}{' '}
         <button type="button" className="underline" onClick={onRetrySummary}>Try again</button>
-      </div>
+      </ErrorNote>
     );
   } else if (!hasModel && hasTranscript) {
     summaryNote = (
@@ -49,7 +51,7 @@ export function MeetingAssistantPanel({ meetingId, hasTranscript, summaryStatus,
 
   return (
     <div className="flex h-full w-full min-w-0 flex-col bg-white">
-      <div className="flex items-center gap-2 border-b border-gray-200 px-4 py-3">
+      <div className="flex h-14 shrink-0 items-center gap-2 border-b border-gray-200 px-4">
         <Sparkles size={16} className="text-blue-600" />
         <span className="text-sm font-semibold text-gray-800">Assistant</span>
       </div>
@@ -65,6 +67,7 @@ export function MeetingAssistantPanel({ meetingId, hasTranscript, summaryStatus,
           </div>
         )}
         trail={summaryNote}
+        onDismissError={dismissError}
         emptyHint={hasTranscript ? `Ask anything about this meeting, for example who owns what or a follow-up email.${suggestions.length > 0 ? ' Click a suggestion to look into it.' : ''}` : 'Questions work once the meeting has a transcript.'}
       />
       <ChatInput placeholder="Ask about this meeting" disabled={!hasTranscript} canSend={canAsk} onSend={ask} context={context} onCompact={compact} />

@@ -61,6 +61,17 @@ pub async fn load<R: Runtime>(app: &AppHandle<R>, meeting_id: &str) -> Result<Me
     respond(app, meeting_id, answering, budget).await
 }
 
+pub async fn dismiss_error<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, message_id: &str) -> Result<(), String> {
+    let position = message_id
+        .strip_prefix('c')
+        .and_then(|position| position.parse::<i64>().ok())
+        .ok_or_else(|| format!("Unknown chat message: {}", message_id))?;
+    let pool = service::db_pool(app)?;
+    MeetingChatRepository::delete_error(&pool, meeting_id, position)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 async fn respond<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, answering: bool, budget: Option<usize>) -> Result<MeetingChat, String> {
     let pool = service::db_pool(app)?;
     let messages = MeetingChatRepository::get_for_meeting(&pool, meeting_id)

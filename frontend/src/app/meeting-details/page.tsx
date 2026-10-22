@@ -8,6 +8,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { LoaderIcon } from "lucide-react";
 import { usePaginatedTranscripts } from "@/hooks/usePaginatedTranscripts";
 import { parseSummaryContent } from "@/lib/summary-content";
+import { transcriptService } from "@/services/transcriptService";
+import { toast } from "sonner";
 
 interface MeetingDetailsResponse {
   id: string;
@@ -41,6 +43,7 @@ function MeetingDetailsContent() {
     loadedCount,
     loadMore,
     refetch,
+    updateText,
     error: transcriptError,
   } = usePaginatedTranscripts({ meetingId: meetingId || '' });
 
@@ -68,6 +71,18 @@ function MeetingDetailsContent() {
       setCurrentMeeting({ id: metadata.id, title: metadata.title });
     }
   }, [metadata, transcripts, meetingId, isLoadingTranscripts, setCurrentMeeting]);
+
+  const editTranscriptLine = useCallback(async (id: string, text: string) => {
+    if (!meetingId) return false;
+    try {
+      await transcriptService.updateTranscriptText(meetingId, id, text);
+      updateText(id, text);
+      return true;
+    } catch (error) {
+      toast.error('Could not save the edit', { description: String(error) });
+      return false;
+    }
+  }, [meetingId, updateText]);
 
   // Handle transcript loading errors
   useEffect(() => {
@@ -186,6 +201,7 @@ function MeetingDetailsContent() {
     totalCount={totalCount}
     loadedCount={loadedCount}
     onLoadMore={loadMore}
+    onEditSegment={editTranscriptLine}
   />;
 }
 

@@ -1,14 +1,18 @@
 'use client';
 
-import { useCallback, useRef, useReducer, startTransition, useEffect, useState, memo } from "react";
+import { useCallback, useRef, useReducer, startTransition, useEffect, useState, memo, KeyboardEvent } from "react";
+import { Pencil } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useAutoScroll } from "@/hooks/useAutoScroll";
 import { useTranscriptStreaming } from "@/hooks/useTranscriptStreaming";
+import { useAutoHeight } from "@/hooks/useAutoHeight";
 import { ConfidenceIndicator } from "./ConfidenceIndicator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { RecordingStatusBar } from "./RecordingStatusBar";
 import { motion, AnimatePresence } from "framer-motion";
 import { TranscriptSegmentData } from "@/types";
+import { Textarea } from "./ui/textarea";
+import { Button } from "./ui/button";
 
 export interface VirtualizedTranscriptViewProps {
     /** Transcript segments to display */
@@ -34,6 +38,7 @@ export interface VirtualizedTranscriptViewProps {
     totalCount?: number;
     loadedCount?: number;
     onLoadMore?: (all?: boolean) => void;
+    onEditSegment?: (id: string, text: string) => Promise<boolean> | void;
 }
 
 // Threshold for enabling virtualization (below this, use simple rendering)
@@ -65,6 +70,65 @@ function cleanStopWords(text: string): string {
 
 export const SCROLL_TO_SEGMENT_EVENT = 'meetily:scroll-to-segment';
 
+function SegmentEditor({ initialText, onSave, onCancel }: {
+    initialText: string;
+    onSave: (text: string) => Promise<void>;
+    onCancel: () => void;
+}) {
+    const [draft, setDraft] = useState(initialText);
+    const [saving, setSaving] = useState(false);
+    const inputRef = useRef<HTMLTextAreaElement>(null);
+    const text = draft.trim();
+
+    useAutoHeight(inputRef, draft);
+
+    useEffect(() => {
+        const input = inputRef.current;
+        input?.focus();
+        input?.setSelectionRange(input.value.length, input.value.length);
+    }, []);
+
+    const save = async () => {
+        if (saving || !text) return;
+        if (text === initialText.trim()) return onCancel();
+        setSaving(true);
+        await onSave(text);
+        setSaving(false);
+    };
+
+    const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            onCancel();
+        } else if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            void save();
+        }
+    };
+
+    return (
+        <div className="space-y-2">
+            <Textarea
+                ref={inputRef}
+                rows={1}
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={onKeyDown}
+                disabled={saving}
+                className="min-h-0 resize-none overflow-hidden px-2 py-1 text-base md:text-base leading-relaxed text-gray-800"
+            />
+            <div className="flex items-center justify-end gap-2">
+                <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={onCancel} disabled={saving} title="Esc">
+                    Cancel
+                </Button>
+                <Button type="button" size="sm" className="h-7 px-3 text-xs" onClick={() => void save()} disabled={saving || !text} title="Enter">
+                    Save
+                </Button>
+            </div>
+        </div>
+    );
+}
+
 // Memoized transcript segment component
 const TranscriptSegment = memo(function TranscriptSegment({
     id,
@@ -74,6 +138,7 @@ const TranscriptSegment = memo(function TranscriptSegment({
     isStreaming,
     showConfidence,
     highlighted = false,
+    onEdit,
 }: {
     id: string;
     timestamp: number;
@@ -82,11 +147,18 @@ const TranscriptSegment = memo(function TranscriptSegment({
     isStreaming: boolean;
     showConfidence: boolean;
     highlighted?: boolean;
+    onEdit?: (id: string, text: string) => Promise<boolean> | void;
 }) {
+    const [editing, setEditing] = useState(false);
     const displayText = cleanStopWords(text) || (text.trim() === '' ? '[Silence]' : text);
+    const canEdit = !!onEdit && !isStreaming;
+
+    const save = async (next: string) => {
+        if ((await onEdit?.(id, next)) !== false) setEditing(false);
+    };
 
     return (
-        <div id={`segment-${id}`} className={`mb-3 rounded-md transition-colors ${highlighted ? 'bg-yellow-50 ring-1 ring-yellow-200' : ''}`}>
+        <div id={`segment-${id}`} className={`group mb-3 rounded-md transition-colors ${highlighted ? 'bg-yellow-50 ring-1 ring-yellow-200' : ''}`}>
             <div className="flex items-start gap-2">
                 <Tooltip>
                     <TooltipTrigger>
@@ -100,13 +172,26 @@ const TranscriptSegment = memo(function TranscriptSegment({
                         )}
                     </TooltipContent>
                 </Tooltip>
-                <div className="flex-1">
-                    {isStreaming ? (
+                <div className="relative flex-1 min-w-0">
+                    {editing ? (
+                        <SegmentEditor initialText={text} onSave={save} onCancel={() => setEditing(false)} />
+                    ) : isStreaming ? (
                         <div className="bg-gray-100 border border-gray-200 rounded-lg px-3 py-2">
                             <p className="text-base text-gray-800 leading-relaxed">{displayText}</p>
                         </div>
                     ) : (
-                        <p className="text-base text-gray-800 leading-relaxed">{displayText}</p>
+                        <p className={`text-base text-gray-800 leading-relaxed ${canEdit ? 'pr-7' : ''}`}>{displayText}</p>
+                    )}
+                    {canEdit && !editing && (
+                        <button
+                            type="button"
+                            onClick={() => setEditing(true)}
+                            className="absolute right-0 top-0.5 p-1 rounded-md text-gray-400 opacity-0 transition-opacity duration-150 hover:text-blue-600 hover:bg-blue-50 group-hover:opacity-100 focus-visible:opacity-100"
+                            aria-label="Edit this line"
+                            title="Edit this line"
+                        >
+                            <Pencil className="w-3.5 h-3.5" />
+                        </button>
                     )}
                 </div>
             </div>
@@ -128,6 +213,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
     totalCount = 0,
     loadedCount = 0,
     onLoadMore,
+    onEditSegment,
 }) => {
     // Create scroll ref first - shared between virtualizer and auto-scroll hook
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -354,6 +440,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                         isStreaming={isStreaming}
                                         showConfidence={showConfidence}
                                         highlighted={highlightedId === segment.id}
+                                        onEdit={onEditSegment}
                                     />
                                 </div>
                             );
@@ -411,6 +498,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                         isStreaming={isStreaming}
                                         showConfidence={showConfidence}
                                         highlighted={highlightedId === segment.id}
+                                        onEdit={onEditSegment}
                                     />
                                 </motion.div>
                             );

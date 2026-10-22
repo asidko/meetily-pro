@@ -321,13 +321,25 @@ pub fn start<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     Ok(())
 }
 
-pub fn on_recording_started<R: Runtime>(app: &AppHandle<R>) {
+fn forget_last_session<R: Runtime>(app: &AppHandle<R>) {
     if let Some(state) = app.try_state::<AssistantState>() {
         let mut inner = lock_inner(&state);
         inner.last_suggestions.clear();
         inner.last_chat.clear();
         inner.last_state_text.clear();
     }
+}
+
+pub fn on_meeting_saved<R: Runtime>(app: &AppHandle<R>) {
+    if with_session(app, |_| ()).is_some() {
+        return;
+    }
+    forget_last_session(app);
+    let _ = app.emit("assistant-status", snapshot(app));
+}
+
+pub fn on_recording_started<R: Runtime>(app: &AppHandle<R>) {
+    forget_last_session(app);
     let settings = settings::load(app);
     if !settings.enabled {
         return;
@@ -436,17 +448,20 @@ pub fn update_suggestion<R: Runtime>(
     .unwrap_or_else(|| Err("Live assistant is not running".to_string()))
 }
 
-pub fn snapshot<R: Runtime>(app: &AppHandle<R>) -> LiveAssistantState {
-    if let Some(state) = with_session(app, |session| lock_data(&session.data).snapshot(true)) {
-        return state;
-    }
-    let (suggestions, chat) = app
-        .try_state::<AssistantState>()
+pub fn last_session<R: Runtime>(app: &AppHandle<R>) -> (Vec<Suggestion>, Vec<ChatMessage>) {
+    app.try_state::<AssistantState>()
         .map(|state| {
             let inner = lock_inner(&state);
             (inner.last_suggestions.clone(), inner.last_chat.clone())
         })
-        .unwrap_or_default();
+        .unwrap_or_default()
+}
+
+pub fn snapshot<R: Runtime>(app: &AppHandle<R>) -> LiveAssistantState {
+    if let Some(state) = with_session(app, |session| lock_data(&session.data).snapshot(true)) {
+        return state;
+    }
+    let (suggestions, chat) = last_session(app);
     LiveAssistantState {
         active: false,
         status: AssistantStatus::Idle,
@@ -1065,7 +1080,11 @@ async fn run_loop<R: Runtime>(
         }
         match result {
             Ok((output, through_seq)) => {
-                let outcome = prompt::reconcile(guard.suggestions.clone(), output, &snapshot.segments, guard.next_id);
+                let mut outcome = prompt::reconcile(guard.suggestions.clone(), output, &snapshot.segments, guard.next_id);
+                let chat_len = guard.chat.len();
+                for item in outcome.open.iter_mut().filter(|item| item.after_chat.is_none()) {
+                    item.after_chat = Some(chat_len);
+                }
                 guard.tick_no += 1;
                 guard.progress = 0;
                 guard.suggestions = outcome.open;

@@ -938,6 +938,25 @@ pub async fn api_save_meeting_title<R: Runtime>(
 }
 
 #[tauri::command]
+pub async fn api_update_transcript_text<R: Runtime>(
+    _app: AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+    meeting_id: String,
+    transcript_id: String,
+    text: String,
+) -> Result<(), String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err("A transcript line cannot be empty".to_string());
+    }
+    match TranscriptsRepository::update_text(state.db_manager.pool(), &meeting_id, &transcript_id, text).await {
+        Ok(true) => Ok(()),
+        Ok(false) => Err("This transcript line no longer exists".to_string()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
 pub async fn api_save_transcript<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,

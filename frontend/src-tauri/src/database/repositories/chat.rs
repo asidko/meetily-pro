@@ -79,6 +79,15 @@ impl MeetingChatRepository {
         Ok(())
     }
 
+    pub async fn delete_error(pool: &SqlitePool, meeting_id: &str, position: i64) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM meeting_chat_messages WHERE meeting_id = ? AND position = ? AND error = 1")
+            .bind(meeting_id)
+            .bind(position)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
     pub async fn get_for_meeting(
         pool: &SqlitePool,
         meeting_id: &str,
@@ -157,6 +166,17 @@ mod tests {
         let chat = MeetingChatRepository::get_for_meeting(&pool, "m1").await.unwrap();
         let roles: Vec<(ChatRole, &str)> = chat.iter().map(|m| (m.role, m.text.as_str())).collect();
         assert_eq!(roles, vec![(ChatRole::User, "Who owns it?"), (ChatRole::KeyTerms, "Terms"), (ChatRole::Recap, "Recap")]);
+    }
+
+    #[tokio::test]
+    async fn only_error_replies_can_be_dismissed() {
+        let pool = pool().await;
+        MeetingChatRepository::append(&pool, "m1", &[message(ChatRole::User, "Who owns it?", false), message(ChatRole::Assistant, "Provider returned 401", true)]).await.unwrap();
+        MeetingChatRepository::delete_error(&pool, "m1", 1).await.unwrap();
+        MeetingChatRepository::delete_error(&pool, "m1", 2).await.unwrap();
+        let chat = MeetingChatRepository::get_for_meeting(&pool, "m1").await.unwrap();
+        let texts: Vec<&str> = chat.iter().map(|m| m.text.as_str()).collect();
+        assert_eq!(texts, vec!["Who owns it?"]);
     }
 
     #[tokio::test]

@@ -75,6 +75,10 @@ export class AssistantService {
     return invoke<MeetingChat>('api_compact_meeting_chat', { meetingId });
   }
 
+  async dismissMeetingChatError(meetingId: string, messageId: string): Promise<void> {
+    return invoke('api_dismiss_meeting_chat_error', { meetingId, messageId });
+  }
+
   async onStatus(callback: (state: LiveAssistantState) => void): Promise<UnlistenFn> {
     return listen<LiveAssistantState>('assistant-status', (event) => callback(event.payload));
   }

@@ -62,8 +62,6 @@
                         "store:default",
                         "notification:default",
                         "notification:allow-is-permission-granted",
-                        "updater:default",
-                        "process:default",
                         {
                             "identifier": "fs:scope",
                             "allow": [
@@ -87,7 +85,6 @@
             "app",
             "dmg"
         ],
-        "createUpdaterArtifacts": true,
         "icon": [
             "icons/icon.png",
             "icons/app_icon.icns",
@@ -110,14 +107,6 @@
                 "conflicts": ["meetily"],
                 "replaces": ["meetily"]
             }
-        }
-    },
-    "plugins": {
-        "updater": {
-            "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVDQTYzMUQ3ODc5N0M4MkEKUldRcXlKZUgxekdtN09DRkVWSHNpZlJseEVOUmpNd1dDSTNaLzZ3MXJGTnY3WW1pdnlOYjBpbkIK",
-            "endpoints": [
-                "https://github.com/asidko/meetily-pro/releases/latest/download/latest.json"
-            ]
         }
     }
 }
