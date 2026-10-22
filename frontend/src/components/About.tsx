@@ -3,10 +3,10 @@ import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
 import Image from 'next/image';
 import { UpdateDialog } from "./UpdateDialog";
-import { updateService, UpdateInfo } from '@/services/updateService';
+import { UpdateInfo } from '@/services/updateService';
+import { checkForUpdatesNow } from './UpdateNotification';
 import { Button } from './ui/button';
 import { Loader2, CheckCircle2 } from 'lucide-react';
-import { toast } from 'sonner';
 
 
 export function About() {
@@ -24,26 +24,11 @@ export function About() {
 
     const handleCheckForUpdates = async () => {
         setIsChecking(true);
-        try {
-            const info = await updateService.checkForUpdates(true);
-            setUpdateInfo(info);
-            if (info.available) {
-                setShowUpdateDialog(true);
-            } else {
-                toast.success('You are running the latest version');
-            }
-        } catch (error: any) {
-            console.error('Failed to check for updates:', error);
-            toast.error('Could not check for updates automatically', {
-                description: 'Download the latest version from the Releases page.',
-                action: {
-                    label: 'Open Releases',
-                    onClick: () => invoke('open_external_url', { url: 'https://github.com/asidko/meetily-pro/releases/latest' }),
-                },
-            });
-        } finally {
-            setIsChecking(false);
-        }
+        const info = await checkForUpdatesNow();
+        setIsChecking(false);
+        if (!info) return;
+        setUpdateInfo(info);
+        if (info.available) setShowUpdateDialog(true);
     };
 
     return (

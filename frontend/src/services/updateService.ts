@@ -1,12 +1,4 @@
-/**
- * Update Service
- *
- * Handles automatic software updates using Tauri updater plugin.
- * Provides update checking, downloading, and installation functionality.
- */
-
-import { check, Update } from '@tauri-apps/plugin-updater';
-import { relaunch } from '@tauri-apps/plugin-process';
+import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
 
 export interface UpdateInfo {
@@ -15,13 +7,16 @@ export interface UpdateInfo {
   version?: string;
   date?: string;
   body?: string;
-  downloadUrl?: string;
+  url?: string;
 }
 
-export interface UpdateProgress {
-  downloaded: number;
-  total: number;
-  percentage: number;
+interface ReleaseCheck {
+  available: boolean;
+  current_version: string;
+  version: string;
+  url: string;
+  date: string | null;
+  notes: string | null;
 }
 
 /**
@@ -60,22 +55,14 @@ export class UpdateService {
     this.lastCheckTime = Date.now();
 
     try {
-      const currentVersion = await getVersion();
-      const update = await check();
-
-      if (update?.available) {
-        return {
-          available: true,
-          currentVersion,
-          version: update.version,
-          date: update.date,
-          body: update.body,
-        };
-      }
-
+      const release = await invoke<ReleaseCheck>('check_latest_release');
       return {
-        available: false,
-        currentVersion,
+        available: release.available,
+        currentVersion: release.current_version,
+        version: release.version,
+        date: release.date ?? undefined,
+        body: release.notes ?? undefined,
+        url: release.url,
       };
     } catch (error) {
       console.error('Failed to check for updates:', error);
@@ -83,42 +70,6 @@ export class UpdateService {
     } finally {
       this.updateCheckInProgress = false;
     }
-  }
-
-  /**
-   * Download and install the available update
-   * @param update The update object from checkForUpdates
-   * @param onProgress Optional progress callback
-   * @returns Promise that resolves when download completes
-   */
-  async downloadAndInstall(
-    update: Update,
-    onProgress?: (progress: UpdateProgress) => void
-  ): Promise<void> {
-    try {
-      // Download the update
-      await update.download();
-
-      // Notify progress if callback provided
-      if (onProgress) {
-        onProgress({ downloaded: 100, total: 100, percentage: 100 });
-      }
-
-      // Install and relaunch
-      await update.install();
-      await relaunch();
-    } catch (error) {
-      console.error('Failed to download/install update:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get the current app version
-   * @returns Promise with version string
-   */
-  async getCurrentVersion(): Promise<string> {
-    return getVersion();
   }
 
   /**

@@ -12,6 +12,7 @@ interface TranscriptContextType {
   transcripts: Transcript[];
   transcriptsRef: MutableRefObject<Transcript[]>
   addTranscript: (update: TranscriptUpdate) => void;
+  editTranscript: (id: string, text: string) => void;
   copyTranscript: () => void;
   flushBuffer: () => void;
   transcriptContainerRef: React.RefObject<HTMLDivElement>;
@@ -453,6 +454,10 @@ export function TranscriptProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const editTranscript = useCallback((id: string, text: string) => {
+    setTranscripts(prev => prev.map(t => (t.id === id ? { ...t, text } : t)));
+  }, []);
+
   // Copy transcript to clipboard with recording-relative timestamps
   const copyTranscript = useCallback(() => {
     // Format timestamps as recording-relative [MM:SS] instead of wall-clock time
@@ -513,6 +518,7 @@ export function TranscriptProvider({ children }: { children: ReactNode }) {
     transcripts,
     transcriptsRef,
     addTranscript,
+    editTranscript,
     copyTranscript,
     flushBuffer,
     transcriptContainerRef,

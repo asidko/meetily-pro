@@ -10,6 +10,7 @@ export interface Suggestion {
   pinned: boolean;
   dismissed: boolean;
   missed_ticks?: number;
+  after_chat?: number | null;
 }
 
 export interface ChatMessage {
@@ -98,6 +99,15 @@ export function sortSuggestions(items: Suggestion[]): Suggestion[] {
   const pinned = visible.filter((item) => item.pinned).sort((a, b) => idNumber(a.id) - idNumber(b.id));
   const rest = visible.filter((item) => !item.pinned).sort((a, b) => idNumber(b.id) - idNumber(a.id));
   return [...pinned, ...rest];
+}
+
+export function chatTimeline(items: Suggestion[], chatLength: number): Suggestion[][] {
+  const slots: Suggestion[][] = Array.from({ length: chatLength + 1 }, () => []);
+  items
+    .filter((item) => !item.dismissed)
+    .sort((a, b) => idNumber(a.id) - idNumber(b.id))
+    .forEach((item) => slots[Math.min(item.after_chat ?? 0, chatLength)].push(item));
+  return slots;
 }
 
 export function formatClock(seconds: number): string {

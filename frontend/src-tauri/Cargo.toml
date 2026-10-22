@@ -1,6 +1,6 @@
 [package]
 name = "meetily"
-version = "1.8.0"
+version = "1.9.0"
 description = "A Tauri App for meeting minutes"
 authors = ["Alexander Sidko", "Sujith S"]
 license = "MIT"
@@ -152,8 +152,6 @@ tauri-plugin-fs = "2.4.0"
 tauri-plugin-dialog = "2.3.0"
 tauri-plugin-store = "2.4.0"
 tauri-plugin-notification = "2.3.1"
-tauri-plugin-updater = "2.3.0"
-tauri-plugin-process = "2.3.0"
 
 # Desktop-only single instance guard
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]

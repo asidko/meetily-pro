@@ -27,6 +27,7 @@ export default function PageContent({
   totalCount,
   loadedCount,
   onLoadMore,
+  onEditSegment,
 }: {
   meeting: any;
   summaryData: MeetingSummary | null;
@@ -40,6 +41,7 @@ export default function PageContent({
   totalCount?: number;
   loadedCount?: number;
   onLoadMore?: (all?: boolean) => void;
+  onEditSegment?: (id: string, text: string) => Promise<boolean>;
 }) {
   console.log('📄 PAGE CONTENT: Initializing with data:', {
     meetingId: meeting.id,
@@ -142,6 +144,7 @@ export default function PageContent({
               totalCount={totalCount}
               loadedCount={loadedCount}
               onLoadMore={onLoadMore}
+              onEditSegment={onEditSegment}
               meetingId={meeting.id}
               meetingFolderPath={meeting.folder_path}
               hasKeyTerms={typeof (meetingData.aiSummary as { key_terms?: unknown } | null)?.key_terms === 'string'}

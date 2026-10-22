@@ -32,7 +32,7 @@ export function TranscriptPanel({
   showModal
 }: TranscriptPanelProps) {
   // Contexts
-  const { transcripts, transcriptContainerRef, copyTranscript } = useTranscripts();
+  const { transcripts, transcriptContainerRef, copyTranscript, editTranscript } = useTranscripts();
   const { transcriptModelConfig } = useConfig();
   const { isRecording, isPaused } = useRecordingState();
   const { checkPermissions, isChecking, hasSystemAudio, hasMicrophone } = usePermissionCheck();
@@ -53,41 +53,35 @@ export function TranscriptPanel({
   return (
     <div ref={transcriptContainerRef} className="w-full border-r border-gray-200 bg-white flex flex-col overflow-y-auto">
       {/* Title area - Sticky header */}
-      <div className="sticky top-0 z-10 bg-white p-4 border-gray-200">
-        <div className="flex flex-col space-y-3">
-          <div className="flex  flex-col space-y-2">
-            <div className="flex justify-center  items-center space-x-2">
-              <ButtonGroup>
-                {transcripts?.length > 0 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={copyTranscript}
-                    title="Copy Transcript"
-                  >
-                    <Copy />
-                    <span className='hidden md:inline'>
-                      Copy
-                    </span>
-                  </Button>
-                )}
-                {(transcriptModelConfig.provider === "localWhisper" || isCloudSpeech(transcriptModelConfig.provider)) &&
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => showModal('languageSettings')}
-                    title="Language"
-                  >
-                    <GlobeIcon />
-                    <span className='hidden md:inline'>
-                      Language
-                    </span>
-                  </Button>
-                }
-              </ButtonGroup>
-            </div>
-          </div>
-        </div>
+      <div className="sticky top-0 z-10 flex h-14 shrink-0 items-center justify-center border-b border-gray-200 bg-white px-4">
+        <ButtonGroup>
+          {transcripts?.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={copyTranscript}
+              title="Copy Transcript"
+            >
+              <Copy />
+              <span className='hidden md:inline'>
+                Copy
+              </span>
+            </Button>
+          )}
+          {(transcriptModelConfig.provider === "localWhisper" || isCloudSpeech(transcriptModelConfig.provider)) &&
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => showModal('languageSettings')}
+              title="Language"
+            >
+              <GlobeIcon />
+              <span className='hidden md:inline'>
+                Language
+              </span>
+            </Button>
+          }
+        </ButtonGroup>
       </div>
 
       {/* Permission Warning - Not needed on Linux */}
@@ -114,6 +108,7 @@ export function TranscriptPanel({
               isStopping={isStopping}
               enableStreaming={isRecording}
               showConfidence={true}
+              onEditSegment={editTranscript}
             />
           </div>
         </div>

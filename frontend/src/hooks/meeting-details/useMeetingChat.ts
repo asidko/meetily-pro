@@ -74,5 +74,14 @@ export function useMeetingChat(meetingId: string) {
 
   const reload = useCallback(() => load(meetingId), [load, meetingId]);
 
-  return { messages, context, answering: asking || answeringElsewhere, ask, compact, reload };
+  const dismissError = useCallback(async (messageId: string) => {
+    try {
+      await assistantService.dismissMeetingChatError(meetingId, messageId);
+      setMessages((previous) => previous.filter((message) => message.id !== messageId));
+    } catch (error) {
+      toast.error('Could not remove the message', { description: String(error) });
+    }
+  }, [meetingId]);
+
+  return { messages, context, answering: asking || answeringElsewhere, ask, compact, reload, dismissError };
 }

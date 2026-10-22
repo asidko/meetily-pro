@@ -1,7 +1,28 @@
 import React from 'react';
 import { Download } from 'lucide-react';
 import { toast } from 'sonner';
-import { UpdateInfo } from '@/services/updateService';
+import { invoke } from '@tauri-apps/api/core';
+import { updateService, UpdateInfo } from '@/services/updateService';
+
+const RELEASES_URL = 'https://github.com/asidko/meetily-pro/releases/latest';
+
+export async function checkForUpdatesNow(): Promise<UpdateInfo | null> {
+  try {
+    const info = await updateService.checkForUpdates(true);
+    if (!info.available) toast.success('You are running the latest version');
+    return info;
+  } catch (error) {
+    console.error('Failed to check for updates:', error);
+    toast.error('Could not check for updates', {
+      description: String(error),
+      action: {
+        label: 'Open Releases',
+        onClick: () => void invoke('open_external_url', { url: RELEASES_URL }),
+      },
+    });
+    return null;
+  }
+}
 
 let globalShowDialogCallback: (() => void) | null = null;
 

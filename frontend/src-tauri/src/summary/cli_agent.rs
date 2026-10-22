@@ -192,6 +192,7 @@ fn command(agent: CliAgent, binary: &Path, env: &LoginEnv) -> Command {
     command
         .envs(env.vars.iter().map(|(name, value)| (name, value)))
         .env("PATH", &env.path)
+        .env_remove("RUST_LOG")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -407,9 +408,12 @@ fn codex_args(model: &str, schema_file: Option<&str>, credentials_store: Option<
 }
 
 fn stderr_reason(output: &Output) -> String {
-    nonempty_lines(&output.stderr)
-        .pop()
-        .unwrap_or_else(|| format!("exited with {}", output.status))
+    let lines = nonempty_lines(&output.stderr);
+    let reported = lines.iter().rev().find_map(|line| line.strip_prefix("ERROR:").map(str::trim));
+    match reported {
+        Some(error) => crate::assistant::service::provider_message(error).unwrap_or_else(|| error.to_string()),
+        None => lines.last().cloned().unwrap_or_else(|| format!("exited with {}", output.status)),
+    }
 }
 
 fn parse_claude_code_output(output: &Output) -> Result<String, String> {
@@ -630,6 +634,9 @@ mod tests {
     fn reads_codex_final_message() {
         assert_eq!(parse_codex_output(&output(0, "{\"ok\":true}\n", "")), Ok("{\"ok\":true}".to_string()));
         assert_eq!(parse_codex_output(&output(1, "", "warn\nNot logged in\n")), Err("Not logged in".to_string()));
+        let failed = "user\nSay hi\nERROR: {\"type\":\"error\",\"status\":400,\"error\":{\"message\":\"The 'x' model is not supported\"}}\n2026-10-22T03:35:23Z  INFO codex_core: shutdown\n";
+        assert_eq!(parse_codex_output(&output(1, "", failed)), Err("The 'x' model is not supported".to_string()));
+        assert_eq!(parse_codex_output(&output(1, "", "ERROR: stream disconnected\n")), Err("stream disconnected".to_string()));
         assert_eq!(parse_codex_output(&output(0, "  ", "")), Ok(String::new()));
         assert!(nonempty_answer(String::new()).is_err());
         assert_eq!(nonempty_answer("ok".to_string()), Ok("ok".to_string()));

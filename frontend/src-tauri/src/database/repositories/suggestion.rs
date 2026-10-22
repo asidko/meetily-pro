@@ -69,6 +69,7 @@ impl MeetingSuggestionsRepository {
                     pinned: row.get::<i64, _>("pinned") != 0,
                     dismissed: row.get::<i64, _>("dismissed") != 0,
                     missed_ticks: 0,
+                    after_chat: None,
                 })
             })
             .collect())
@@ -105,6 +106,7 @@ mod tests {
             pinned: false,
             dismissed: false,
             missed_ticks: 0,
+            after_chat: None,
         }
     }
 

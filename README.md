@@ -32,6 +32,13 @@ The macOS app is ad-hoc signed, not notarized. After dragging it to Applications
 
 ## What's new
 
+### v1.9.0
+
+- Fix a transcript line on the spot: hover it, click the pencil, edit, press Enter. Works during a call and on saved meetings.
+- Tips from the assistant now appear in the chat in the order they come, right after your questions and answers.
+- Chat errors show the real reason from the AI service and can be closed with a cross.
+- Check for Updates looks at the latest release on GitHub and links to its download page.
+
 ### v1.8.0
 
 - Retranscribe a meeting or import a recording with the OpenAI or OpenRouter speech models too.
@@ -44,13 +51,6 @@ The macOS app is ad-hoc signed, not notarized. After dragging it to Applications
 - Transcribe calls with OpenAI's GPT Transcribe, straight from OpenAI or through OpenRouter, using the key you already saved for AI.
 - OpenRouter also offers other cloud speech models, such as Deepgram, ElevenLabs and Gemini.
 - If the service fails for a moment, the recording keeps going and you see what was skipped.
-
-### v1.6.0
-
-- When a meeting ends, the assistant posts a short summary right into the chat; just keep asking if you want more detail.
-- Summaries are shorter: what the meeting was about, what was decided and what happens next.
-- The chat memory gauge now sits next to the message box and turns into a Compact link when the chat gets long.
-- Copy any assistant reply with one click.
 
 ## Features
 

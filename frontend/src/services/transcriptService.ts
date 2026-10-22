@@ -47,6 +47,10 @@ export class TranscriptService {
     return invoke<TranscriptionStatus>('get_transcription_status');
   }
 
+  async updateTranscriptText(meetingId: string, transcriptId: string, text: string): Promise<void> {
+    return invoke('api_update_transcript_text', { meetingId, transcriptId, text });
+  }
+
   // Event Listeners
 
   /**

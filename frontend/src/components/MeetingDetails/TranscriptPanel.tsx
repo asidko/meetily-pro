@@ -21,6 +21,7 @@ interface TranscriptPanelProps {
   totalCount?: number;
   loadedCount?: number;
   onLoadMore?: (all?: boolean) => void;
+  onEditSegment?: (id: string, text: string) => Promise<boolean>;
 
   // Retranscription props
   meetingId?: string;
@@ -42,6 +43,7 @@ export function TranscriptPanel({
   totalCount,
   loadedCount,
   onLoadMore,
+  onEditSegment,
   meetingId,
   meetingFolderPath,
   hasKeyTerms,
@@ -65,7 +67,7 @@ export function TranscriptPanel({
   return (
     <div className="flex h-full min-w-0 w-full bg-white flex-col relative @container">
       {/* Title area */}
-      <div className="p-4 border-b border-gray-200">
+      <div className="flex h-14 shrink-0 items-center px-4 border-b border-gray-200">
         <TranscriptButtonGroup
           transcriptCount={usePagination ? (totalCount ?? convertedSegments.length) : (transcripts?.length || 0)}
           onCopyTranscript={onCopyTranscript}
@@ -93,6 +95,7 @@ export function TranscriptPanel({
           totalCount={totalCount}
           loadedCount={loadedCount}
           onLoadMore={onLoadMore}
+          onEditSegment={onEditSegment}
         />
       </div>
 
