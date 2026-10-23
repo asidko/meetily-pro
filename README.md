@@ -32,6 +32,12 @@ The macOS app is ad-hoc signed, not notarized. After dragging it to Applications
 
 ## What's new
 
+### v1.9.1
+
+- Report a Bug in About opens a GitHub issue with your app and system details already filled in.
+- About now shows what changed in the last releases, plus credits and licenses.
+- Links open correctly on Windows.
+
 ### v1.9.0
 
 - Fix a transcript line on the spot: hover it, click the pencil, edit, press Enter. Works during a call and on saved meetings.
@@ -45,12 +51,6 @@ The macOS app is ad-hoc signed, not notarized. After dragging it to Applications
 - Each summary comes with a short note on the meeting's topic and key terms, shown in the chat just before it.
 - When retranscribing with OpenAI, that note helps the model spell names and jargon right.
 - The About window now shows only the version, updates and links.
-
-### v1.7.0
-
-- Transcribe calls with OpenAI's GPT Transcribe, straight from OpenAI or through OpenRouter, using the key you already saved for AI.
-- OpenRouter also offers other cloud speech models, such as Deepgram, ElevenLabs and Gemini.
-- If the service fails for a moment, the recording keeps going and you see what was skipped.
 
 ## Features
 
