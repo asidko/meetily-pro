@@ -1180,7 +1180,14 @@ pub async fn open_external_url(url: String) -> Result<(), String> {
     use std::process::Command;
 
     let result = if cfg!(target_os = "windows") {
-        Command::new("cmd").args(&["/C", "start", &url]).output()
+        let mut command = Command::new("rundll32");
+        command.args(["url.dll,FileProtocolHandler", &url]);
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x0800_0000);
+        }
+        command.output()
     } else if cfg!(target_os = "macos") {
         Command::new("open").arg(&url).output()
     } else {

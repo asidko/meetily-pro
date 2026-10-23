@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-const LATEST_RELEASE_URL: &str = "https://api.github.com/repos/asidko/meetily-pro/releases/latest";
+pub const REPO: &str = "asidko/meetily-pro";
 const RATE_LIMITED: &str = "GitHub limits how often it can be asked. Try again in an hour.";
 
 #[derive(Deserialize)]
@@ -62,7 +62,7 @@ pub async fn check_latest_release() -> Result<ReleaseCheck, String> {
         .build()
         .map_err(|e| e.to_string())?;
     let response = client
-        .get(LATEST_RELEASE_URL)
+        .get(format!("https://api.github.com/repos/{}/releases/latest", REPO))
         .header("Accept", "application/vnd.github+json")
         .send()
         .await

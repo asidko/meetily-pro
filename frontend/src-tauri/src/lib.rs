@@ -38,6 +38,7 @@ pub(crate) use perf_trace;
 pub mod api;
 pub mod assistant;
 pub mod audio;
+pub mod bug_report;
 pub mod config;
 pub mod console_utils;
 pub mod database;
@@ -720,6 +721,7 @@ pub fn run() {
             api::debug_backend_connection,
             api::open_external_url,
             release_check::check_latest_release,
+            bug_report::bug_report_url,
             // Custom OpenAI commands
             api::api_save_custom_openai_config,
             api::api_get_custom_openai_config,

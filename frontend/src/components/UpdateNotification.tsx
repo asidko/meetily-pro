@@ -3,8 +3,8 @@ import { Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { invoke } from '@tauri-apps/api/core';
 import { updateService, UpdateInfo } from '@/services/updateService';
+import { REPO_URL } from '@/lib/about';
 
-const RELEASES_URL = 'https://github.com/asidko/meetily-pro/releases/latest';
 
 export async function checkForUpdatesNow(): Promise<UpdateInfo | null> {
   try {
@@ -17,7 +17,7 @@ export async function checkForUpdatesNow(): Promise<UpdateInfo | null> {
       description: String(error),
       action: {
         label: 'Open Releases',
-        onClick: () => void invoke('open_external_url', { url: RELEASES_URL }),
+        onClick: () => void invoke('open_external_url', { url: `${REPO_URL}/releases/latest` }),
       },
     });
     return null;
