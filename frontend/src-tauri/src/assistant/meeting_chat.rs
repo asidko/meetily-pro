@@ -9,8 +9,9 @@ use super::service::{self, truncate_to_tokens, ChatContext, RequestPlan};
 use crate::audio::recording_saver::TranscriptSegment;
 use crate::database::repositories::chat::MeetingChatRepository;
 use crate::database::repositories::meeting::MeetingsRepository;
+use crate::database::repositories::summary::SummaryProcessesRepository;
 use crate::summary::llm_client::LLMProvider;
-use crate::summary::processor::clean_llm_markdown_detailed;
+use crate::summary::processor::{clean_llm_markdown_detailed, plain_key_terms};
 use crate::summary::service::{key_terms_from_result, stored_summary_result};
 
 const LARGE_CONTEXT_INPUT_TOKENS: usize = 24000;
@@ -46,7 +47,7 @@ pub struct MeetingChat {
 }
 
 fn message(role: ChatRole, text: String, error: bool) -> ChatMessage {
-    ChatMessage { id: String::new(), role, text, error }
+    ChatMessage { id: String::new(), role, text, error, cards_note: false }
 }
 
 pub async fn load<R: Runtime>(app: &AppHandle<R>, meeting_id: &str) -> Result<MeetingChat, String> {
@@ -59,6 +60,18 @@ pub async fn load<R: Runtime>(app: &AppHandle<R>, meeting_id: &str) -> Result<Me
         Err(_) => None,
     };
     respond(app, meeting_id, answering, budget).await
+}
+
+pub async fn edit_key_terms<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, key_terms: &str) -> Result<String, String> {
+    let key_terms = plain_key_terms(key_terms).ok_or_else(|| "Key terms cannot be empty".to_string())?;
+    let pool = service::db_pool(app)?;
+    if !MeetingChatRepository::set_key_terms(&pool, meeting_id, &key_terms).await.map_err(|e| e.to_string())? {
+        return Err("This meeting has no key terms yet".to_string());
+    }
+    SummaryProcessesRepository::set_key_terms(&pool, meeting_id, &key_terms)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(key_terms)
 }
 
 pub async fn dismiss_error<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, message_id: &str) -> Result<(), String> {

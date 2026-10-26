@@ -70,10 +70,11 @@ function cleanStopWords(text: string): string {
 
 export const SCROLL_TO_SEGMENT_EVENT = 'meetily:scroll-to-segment';
 
-function SegmentEditor({ initialText, onSave, onCancel }: {
+export function SegmentEditor({ initialText, onSave, onCancel, textClassName = 'text-base md:text-base leading-relaxed' }: {
     initialText: string;
     onSave: (text: string) => Promise<void>;
     onCancel: () => void;
+    textClassName?: string;
 }) {
     const [draft, setDraft] = useState(initialText);
     const [saving, setSaving] = useState(false);
@@ -115,7 +116,7 @@ function SegmentEditor({ initialText, onSave, onCancel }: {
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={onKeyDown}
                 disabled={saving}
-                className="min-h-0 resize-none overflow-hidden px-2 py-1 text-base md:text-base leading-relaxed text-gray-800"
+                className={`min-h-0 resize-none overflow-hidden px-2 py-1 text-gray-800 ${textClassName}`}
             />
             <div className="flex items-center justify-end gap-2">
                 <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={onCancel} disabled={saving} title="Esc">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type CSSProperties } from 'react';
 import { RecordingControls } from '@/components/RecordingControls';
 import { useSidebar } from '@/components/Sidebar/SidebarProvider';
 import { usePermissionCheck } from '@/hooks/usePermissionCheck';
@@ -11,7 +11,7 @@ import { StatusOverlays } from '@/app/_components/StatusOverlays';
 import { SettingsModals } from './_components/SettingsModal';
 import { TranscriptPanel } from './_components/TranscriptPanel';
 import { AssistantPanel } from './_components/AssistantPanel';
-import { readPanelOpen, writePanelOpen } from '@/lib/live-assistant';
+import { clampPanelWidth, PANEL_DEFAULT_WIDTH, panelWidthCss, readPanelOpen, readPanelWidth, writePanelOpen } from '@/lib/live-assistant';
 import { useModalState } from '@/hooks/useModalState';
 import { useRecordingStateSync } from '@/hooks/useRecordingStateSync';
 import { useRecordingStart } from '@/hooks/useRecordingStart';
@@ -28,9 +28,11 @@ export default function Home() {
   const [barHeights, setBarHeights] = useState(['58%', '76%', '58%']);
   const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantWidth, setAssistantWidth] = useState(PANEL_DEFAULT_WIDTH);
 
   useEffect(() => {
     setAssistantOpen(readPanelOpen());
+    setAssistantWidth(clampPanelWidth(readPanelWidth(), window.innerWidth));
   }, []);
 
   const toggleAssistant = useCallback(() => {
@@ -214,13 +216,13 @@ export default function Home() {
         onDelete={deleteRecoverableMeeting}
         onLoadPreview={loadMeetingTranscripts}
       />
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden" style={{ '--assistant-width': panelWidthCss(assistantWidth) } as CSSProperties}>
         <TranscriptPanel
           isProcessingStop={isProcessingStop}
           isStopping={isStopping}
           showModal={showModal}
         />
-        <AssistantPanel open={assistantOpen} isRecording={recordingState.isRecording} onToggle={toggleAssistant} />
+        <AssistantPanel open={assistantOpen} isRecording={recordingState.isRecording} onToggle={toggleAssistant} width={assistantWidth} onWidthChange={setAssistantWidth} />
 
         {/* Recording controls - only show when permissions are granted or already recording and not showing status messages */}
         {(hasMicrophone || isRecording) &&
@@ -228,10 +230,10 @@ export default function Home() {
           status !== RecordingStatus.SAVING && (
             <div className="fixed bottom-12 left-0 right-0 z-10">
               <div
-                className="flex justify-center pl-8 transition-[margin] duration-300"
+                className="flex justify-center pl-8 transition-[margin] duration-300 [[data-resizing]_&]:transition-none"
                 style={{
                   marginLeft: sidebarCollapsed ? '4rem' : '16rem',
-                  marginRight: assistantOpen ? '320px' : '2.5rem'
+                  marginRight: assistantOpen ? 'var(--assistant-width)' : '2.5rem'
                 }}
               >
                 <div className="w-2/3 max-w-[750px] flex justify-center">

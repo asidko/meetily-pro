@@ -67,6 +67,8 @@ pub struct LiveAssistantState {
     pub model: String,
     pub is_cloud: bool,
     pub last_tick_at: Option<String>,
+    pub last_tick_added: Option<usize>,
+    pub cards_full: bool,
     pub error: Option<String>,
     pub tick_no: u32,
     pub progress: u8,
@@ -163,6 +165,7 @@ struct SessionData {
     started_at: Instant,
     last_tick_started: Option<Instant>,
     last_tick_at: Option<DateTime<Utc>>,
+    last_tick_added: Option<usize>,
     last_duration: Duration,
     last_tick_seq: Option<u64>,
     last_seen_seq: Option<u64>,
@@ -199,6 +202,7 @@ impl SessionData {
             started_at: now,
             last_tick_started: None,
             last_tick_at: None,
+            last_tick_added: None,
             last_duration: Duration::ZERO,
             last_tick_seq: None,
             last_seen_seq: None,
@@ -211,9 +215,10 @@ impl SessionData {
         }
     }
 
-    fn push_chat(&mut self, role: ChatRole, text: String, error: bool) {
+    fn push_chat(&mut self, role: ChatRole, text: String, error: bool) -> &mut ChatMessage {
         let id = format!("c{}", self.chat.len() + 1);
-        self.chat.push(ChatMessage { id, role, text, error });
+        self.chat.push(ChatMessage { id, role, text, error, cards_note: false });
+        self.chat.last_mut().expect("message was just pushed")
     }
 
     fn fail_setup(&mut self, error: &str) {
@@ -235,6 +240,8 @@ impl SessionData {
             model: self.model.clone(),
             is_cloud: self.is_cloud,
             last_tick_at: self.last_tick_at.map(|t| t.to_rfc3339()),
+            last_tick_added: self.last_tick_added,
+            cards_full: prompt::cards_full(&self.suggestions),
             error: self.error.clone(),
             tick_no: self.tick_no,
             progress: self.progress,
@@ -469,6 +476,8 @@ pub fn snapshot<R: Runtime>(app: &AppHandle<R>) -> LiveAssistantState {
         model: String::new(),
         is_cloud: false,
         last_tick_at: None,
+        last_tick_added: None,
+        cards_full: prompt::cards_full(&suggestions),
         error: None,
         tick_no: 0,
         progress: 0,
@@ -726,7 +735,7 @@ pub async fn compact<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
             let guard = lock_data(&data);
             (guard.chat.clone(), guard.input_budget)
         };
-        compact_chat(app, &plan, &chat, budget, &token).await
+        Ok((compact_chat(app, &plan, &chat, budget, &token).await?, false))
     })
     .await
 }
@@ -735,7 +744,7 @@ async fn chat_turn<R, F, Fut>(app: &AppHandle<R>, question: Option<String>, role
 where
     R: Runtime,
     F: FnOnce(Arc<Mutex<SessionData>>, CancellationToken) -> Fut,
-    Fut: std::future::Future<Output = Result<String, String>>,
+    Fut: std::future::Future<Output = Result<(String, bool), String>>,
 {
     let (data, token) = with_session(app, |session| (session.data.clone(), session.token.clone()))
         .ok_or_else(|| "Chat works while a recording is running".to_string())?;
@@ -760,8 +769,8 @@ where
     guard.chat_pending = false;
     let paused_mid_answer = guard.chat_inflight.take().is_none();
     let outcome = match answer {
-        Ok(text) => {
-            guard.push_chat(role, text, false);
+        Ok((text, cards_note)) => {
+            guard.push_chat(role, text, false).cards_note = cards_note;
             Ok(())
         }
         Err(error) if role == ChatRole::Summary => Err(short_error(&error)),
@@ -787,7 +796,7 @@ async fn answer_chat<R: Runtime>(
     app: &AppHandle<R>,
     data: &Arc<Mutex<SessionData>>,
     chat_token: &CancellationToken,
-) -> Result<String, String> {
+) -> Result<(String, bool), String> {
     let plan = resolve_plan(app, data).await?;
     let snapshot = live_transcript_snapshot().ok_or_else(|| "No active recording".to_string())?;
     let (prefix, chat, budget) = {
@@ -810,7 +819,29 @@ async fn answer_chat<R: Runtime>(
         budget,
         max_tokens: CHAT_OUTPUT_TOKENS,
     };
-    answer_question(app, &plan, request, chat_token).await
+    let answer = answer_question(app, &plan, request, chat_token).await?;
+    let (mut text, items) = prompt::split_chat_items(&answer);
+    let mut cards_note = false;
+    if !items.is_empty() {
+        let mut guard = lock_data(data);
+        let session = &mut *guard;
+        let reply_index = session.chat.len() + 1;
+        let outcome = prompt::add_requested_items(&mut session.suggestions, items, &snapshot.segments, &mut session.next_id, reply_index);
+        info!("Live assistant chat added {} requested suggestions", outcome.added);
+        for rejected in outcome.rejected {
+            text.push_str("\n- ");
+            text.push_str(&rejected);
+        }
+        text = text.trim().to_string();
+        if text.is_empty() && outcome.added == 0 {
+            text = "Those are already in the suggestions.".to_string();
+        } else if text.is_empty() {
+            let cards = if outcome.added == 1 { "1 card".to_string() } else { format!("{} cards", outcome.added) };
+            text = format!("Added {} to the suggestions.", cards);
+            cards_note = true;
+        }
+    }
+    Ok((text, cards_note))
 }
 
 pub(super) struct ChatRequest<'a> {
@@ -1094,6 +1125,7 @@ async fn run_loop<R: Runtime>(
                 guard.next_id = outcome.next_id;
                 guard.last_tick_seq = through_seq;
                 guard.last_tick_at = Some(Utc::now());
+                guard.last_tick_added = Some(outcome.added);
                 guard.failures = 0;
                 guard.error = None;
                 guard.settle_status();
@@ -1248,6 +1280,7 @@ mod tests {
             role: ChatRole::User,
             text: "word ".repeat(words),
             error: false,
+            cards_note: false,
         };
         let chat = vec![message("c1", 400), message("c2", 10), message("c3", 10)];
         let ids = |history: Vec<ChatMessage>| history.into_iter().map(|m| m.id).collect::<Vec<_>>();
@@ -1264,7 +1297,7 @@ mod tests {
 
     #[test]
     fn compacted_chat_starts_from_its_summary() {
-        let message = |id: &str, role: ChatRole, text: &str| ChatMessage { id: id.to_string(), role, text: text.to_string(), error: false };
+        let message = |id: &str, role: ChatRole, text: &str| ChatMessage { id: id.to_string(), role, text: text.to_string(), error: false, cards_note: false };
         let chat = vec![
             message("c1", ChatRole::User, &"old ".repeat(300)),
             message("c2", ChatRole::Assistant, &"answer ".repeat(300)),
@@ -1283,7 +1316,7 @@ mod tests {
 
     #[test]
     fn compaction_keeps_the_earlier_summary_when_the_chat_overflows() {
-        let message = |id: &str, role: ChatRole, words: usize| ChatMessage { id: id.to_string(), role, text: "word ".repeat(words), error: false };
+        let message = |id: &str, role: ChatRole, words: usize| ChatMessage { id: id.to_string(), role, text: "word ".repeat(words), error: false, cards_note: false };
         let memory = vec![
             message("c1", ChatRole::Summary, 10),
             message("c2", ChatRole::User, 400),
@@ -1300,7 +1333,7 @@ mod tests {
     fn a_long_pasted_message_is_cut_for_suggestions_only() {
         let pasted = "word ".repeat(5000);
         assert_eq!(checked_question(pasted.clone()).unwrap(), pasted.trim());
-        let chat = vec![ChatMessage { id: "c1".to_string(), role: ChatRole::User, text: pasted, error: false }];
+        let chat = vec![ChatMessage { id: "c1".to_string(), role: ChatRole::User, text: pasted, error: false, cards_note: false }];
         let own = user_messages(&chat, 100);
         assert_eq!(own.len(), 1);
         assert!(rough_token_count(&own[0].text) <= 110);
@@ -1309,7 +1342,7 @@ mod tests {
 
     #[test]
     fn the_meeting_recap_stays_out_of_chat_memory() {
-        let message = |id: &str, role: ChatRole, text: &str| ChatMessage { id: id.to_string(), role, text: text.to_string(), error: false };
+        let message = |id: &str, role: ChatRole, text: &str| ChatMessage { id: id.to_string(), role, text: text.to_string(), error: false, cards_note: false };
         let chat = vec![
             message("c1", ChatRole::KeyTerms, "Rollout with Anya, etcd and S3"),
             message("c2", ChatRole::Recap, "The meeting covered the rollout"),

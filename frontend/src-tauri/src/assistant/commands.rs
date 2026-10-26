@@ -106,6 +106,15 @@ pub async fn api_compact_meeting_chat<R: Runtime>(app: AppHandle<R>, meeting_id:
 }
 
 #[tauri::command]
+pub async fn api_update_meeting_key_terms<R: Runtime>(
+    app: AppHandle<R>,
+    meeting_id: String,
+    key_terms: String,
+) -> Result<String, String> {
+    meeting_chat::edit_key_terms(&app, &meeting_id, &key_terms).await
+}
+
+#[tauri::command]
 pub async fn api_dismiss_meeting_chat_error<R: Runtime>(
     app: AppHandle<R>,
     meeting_id: String,

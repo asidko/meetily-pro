@@ -79,6 +79,16 @@ impl MeetingChatRepository {
         Ok(())
     }
 
+    pub async fn set_key_terms(pool: &SqlitePool, meeting_id: &str, key_terms: &str) -> Result<bool, sqlx::Error> {
+        let update = sqlx::query("UPDATE meeting_chat_messages SET text = ? WHERE meeting_id = ? AND role = ?")
+            .bind(key_terms)
+            .bind(meeting_id)
+            .bind(ChatRole::KeyTerms.as_str())
+            .execute(pool)
+            .await?;
+        Ok(update.rows_affected() > 0)
+    }
+
     pub async fn delete_error(pool: &SqlitePool, meeting_id: &str, position: i64) -> Result<(), sqlx::Error> {
         sqlx::query("DELETE FROM meeting_chat_messages WHERE meeting_id = ? AND position = ? AND error = 1")
             .bind(meeting_id)
@@ -105,6 +115,7 @@ impl MeetingChatRepository {
                 role: ChatRole::parse(row.get::<String, _>("role").as_str()),
                 text: row.get("text"),
                 error: row.get::<i64, _>("error") != 0,
+                cards_note: false,
             })
             .collect())
     }
@@ -130,7 +141,7 @@ mod tests {
     }
 
     fn message(role: ChatRole, text: &str, error: bool) -> ChatMessage {
-        ChatMessage { id: String::new(), role, text: text.to_string(), error }
+        ChatMessage { id: String::new(), role, text: text.to_string(), error, cards_note: false }
     }
 
     #[tokio::test]
@@ -166,6 +177,17 @@ mod tests {
         let chat = MeetingChatRepository::get_for_meeting(&pool, "m1").await.unwrap();
         let roles: Vec<(ChatRole, &str)> = chat.iter().map(|m| (m.role, m.text.as_str())).collect();
         assert_eq!(roles, vec![(ChatRole::User, "Who owns it?"), (ChatRole::KeyTerms, "Terms"), (ChatRole::Recap, "Recap")]);
+    }
+
+    #[tokio::test]
+    async fn key_terms_can_be_rewritten_once_they_exist() {
+        let pool = pool().await;
+        assert!(!MeetingChatRepository::set_key_terms(&pool, "m1", "Edited").await.unwrap());
+        MeetingChatRepository::append_recap_once(&pool, "m1", Some("Terms"), "Recap").await.unwrap();
+        assert!(MeetingChatRepository::set_key_terms(&pool, "m1", "Rollout with Anya").await.unwrap());
+        let chat = MeetingChatRepository::get_for_meeting(&pool, "m1").await.unwrap();
+        let roles: Vec<(ChatRole, &str)> = chat.iter().map(|m| (m.role, m.text.as_str())).collect();
+        assert_eq!(roles, vec![(ChatRole::KeyTerms, "Rollout with Anya"), (ChatRole::Recap, "Recap")]);
     }
 
     #[tokio::test]

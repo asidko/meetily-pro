@@ -75,6 +75,10 @@ export class AssistantService {
     return invoke<MeetingChat>('api_compact_meeting_chat', { meetingId });
   }
 
+  async updateMeetingKeyTerms(meetingId: string, keyTerms: string): Promise<string> {
+    return invoke<string>('api_update_meeting_key_terms', { meetingId, keyTerms });
+  }
+
   async dismissMeetingChatError(meetingId: string, messageId: string): Promise<void> {
     return invoke('api_dismiss_meeting_chat_error', { meetingId, messageId });
   }
