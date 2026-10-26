@@ -97,7 +97,7 @@ jobs:
           - os: macos-14
             triple: aarch64-apple-darwin
             helper-features: --features metal
-            bundles: app,dmg
+            bundles: app
             asset: meetily-macos-arm64
           - os: ubuntu-22.04
             triple: x86_64-unknown-linux-gnu
@@ -152,7 +152,7 @@ jobs:
         run: |
           mkdir -p dist
           if [ "$RUNNER_OS" = macOS ]; then
-            cp "$(find target/release/bundle/dmg -name '*.dmg' | head -1)" "dist/${{ matrix.asset }}.dmg"
+            frontend/src-tauri/dmg/build-dmg.sh "$(find target/release/bundle/macos -maxdepth 1 -name '*.app' | head -1)" "dist/${{ matrix.asset }}.dmg"
           else
             cp "$(find target/release/bundle/deb -name '*.deb' | head -1)" "dist/${{ matrix.asset }}.deb"
           fi
