@@ -32,11 +32,13 @@ The macOS app is ad-hoc signed, not notarized. After dragging it to Applications
 
 ## What's new
 
-### v1.9.1
+### v1.10.0
 
-- Report a Bug in About opens a GitHub issue with your app and system details already filled in.
-- About now shows what changed in the last releases, plus credits and licenses.
-- Links open correctly on Windows.
+- Importing a video keeps only its sound, so the import is fast and takes little space.
+- Drag the edge of the assistant panel to make it wider or narrower; it remembers the width.
+- Ask the assistant for tips or questions and they arrive as cards. Keep typing while it answers: your messages go out right after.
+- Fix a meeting's topic and key terms with the pencil next to them.
+- Report a Bug in About opens a GitHub issue with your app and system details already filled in, and About shows recent changes, credits and licenses.
 
 ### v1.9.0
 

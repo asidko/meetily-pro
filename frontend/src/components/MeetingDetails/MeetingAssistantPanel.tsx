@@ -3,12 +3,12 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Sparkles } from 'lucide-react';
-import { ChatInput, ChatThread, ErrorNote } from '@/components/AssistantChat';
+import { ChatInput, ChatThread, ErrorNote, useChatComposer } from '@/components/AssistantChat';
 import { SuggestionCard } from '@/components/SuggestionCard';
 import { useMeetingChat } from '@/hooks/meeting-details/useMeetingChat';
 import { useMeetingSuggestions } from '@/hooks/meeting-details/useMeetingSuggestions';
 import type { SummaryStatus } from '@/hooks/meeting-details/useSummaryGeneration';
-import { suggestionQuestion } from '@/lib/live-assistant';
+import { suggestionQuestion, takeCarriedQueue } from '@/lib/live-assistant';
 
 interface MeetingAssistantPanelProps {
   meetingId: string;
@@ -20,10 +20,11 @@ interface MeetingAssistantPanelProps {
 }
 
 export function MeetingAssistantPanel({ meetingId, hasTranscript, summaryStatus, summaryError, hasModel, onRetrySummary }: MeetingAssistantPanelProps) {
-  const { messages, context, answering, ask, compact, reload, dismissError } = useMeetingChat(meetingId);
+  const { messages, context, answering, ask, compact, reload, dismissError, editKeyTerms } = useMeetingChat(meetingId);
   const [summaryErrorHidden, setSummaryErrorHidden] = useState(false);
   const { suggestions, dismiss } = useMeetingSuggestions(meetingId);
   const canAsk = hasTranscript && !answering;
+  const composer = useChatComposer(ask, canAsk, !hasTranscript, () => takeCarriedQueue(meetingId));
   const writingSummary = summaryStatus === 'processing';
 
   const previousSummaryStatus = useRef(summaryStatus);
@@ -68,9 +69,10 @@ export function MeetingAssistantPanel({ meetingId, hasTranscript, summaryStatus,
         )}
         trail={summaryNote}
         onDismissError={dismissError}
+        onEditKeyTerms={editKeyTerms}
         emptyHint={hasTranscript ? `Ask anything about this meeting, for example who owns what or a follow-up email.${suggestions.length > 0 ? ' Click a suggestion to look into it.' : ''}` : 'Questions work once the meeting has a transcript.'}
       />
-      <ChatInput placeholder="Ask about this meeting" disabled={!hasTranscript} canSend={canAsk} onSend={ask} context={context} onCompact={compact} />
+      <ChatInput placeholder="Ask about this meeting" composer={composer} context={context} onCompact={compact} />
     </div>
   );
 }

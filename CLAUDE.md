@@ -33,7 +33,7 @@ The sidecar: `tauri.conf.json` lists `binaries/llama-helper` and `binaries/ffmpe
 
 ### Tests
 
-Frontend tests use Bun's runner (`bun:test`, `react-test-renderer`), not Jest or Vitest. Files live in `frontend/tests/{hooks,lib}`.
+Frontend tests use Bun's runner (`bun:test`, `react-test-renderer`), not Jest or Vitest. Files live in `frontend/tests/{components,hooks,lib}`.
 
 ```bash
 pnpm test                                      # all files, one Bun process each (scripts/run-tests.js)
@@ -56,7 +56,7 @@ CI: `.github/workflows/ci.yml` runs on push to `main` and on every PR: `pnpm lin
 ## Branches, versions, commits
 
 - This is the asidko/meetily-pro fork: `origin` is the fork, `upstream` is Zackriya-Solutions/meetily. Branch from `main`, PR into the fork's `main`. Upstream uses `devtest` as integration branch (CONTRIBUTING.md); only matters when sending changes upstream. Conventional commit format.
-- Version is duplicated in `frontend/package.json`, `frontend/src-tauri/Cargo.toml` and `frontend/src-tauri/tauri.conf.json`; the release workflow fails unless all three match the tag. Bump all three, update the README "What's new" section, then tag `vX.Y.Z` and push.
+- Version is duplicated in `frontend/package.json`, `frontend/src-tauri/Cargo.toml` and `frontend/src-tauri/tauri.conf.json`; the release workflow fails unless all three match the tag. Also bump the `meetily` entry in the root `Cargo.lock`, or CI's `cargo test --locked` fails. Bump all three, update the README "What's new" section, then tag `vX.Y.Z` and push.
 - The About page shows the same last 3 releases in `frontend/src/lib/about.ts` (`WHATS_NEW`, one or two short highlights each); `tests/lib/about.test.ts` fails unless its versions match the README blocks and the first one matches package.json.
 - README "## What's new" has no version in its heading. It holds one `### vX.Y.Z` block per release for the last 3 releases only, each with the few major user-facing changes; drop the oldest block when adding a new one. The release workflow copies the block matching the tag into the release notes and fails if it is missing. Write it for users: plain words about what they can now do, no technical terms.
 - There is no auto-updater. Check for Updates (About, tray, a startup check) asks the GitHub API for this fork's latest release (`release_check.rs`) and only links to the release page.

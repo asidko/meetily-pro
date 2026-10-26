@@ -9,6 +9,7 @@ import { storageService } from '@/services/storageService';
 import { assistantService } from '@/services/assistantService';
 import { transcriptService } from '@/services/transcriptService';
 import { detectAndCacheSummaryLanguage } from '@/lib/summary-language-preferences';
+import { bindCarriedQueue } from '@/lib/live-assistant';
 
 import type { SummaryStatus } from '@/hooks/meeting-details/useSummaryGeneration';
 
@@ -285,6 +286,7 @@ export function useRecordingStop(
           } catch (error) {
             console.warn('Failed to store the live assistant chat:', error);
           }
+          bindCarriedQueue(meetingId);
 
           // Clean up session storage
           sessionStorage.removeItem('last_recording_folder_path');

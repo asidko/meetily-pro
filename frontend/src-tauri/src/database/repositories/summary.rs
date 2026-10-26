@@ -1,4 +1,5 @@
 use crate::database::models::SummaryProcess;
+use crate::summary::service::KEY_TERMS_FIELD;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use sqlx::SqlitePool;
@@ -95,6 +96,21 @@ impl SummaryProcessesRepository {
         .execute(pool)
         .await?;
         Ok(update.rows_affected() == 1)
+    }
+
+    pub async fn set_key_terms(pool: &SqlitePool, meeting_id: &str, key_terms: &str) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "UPDATE summary_processes SET
+                result = CASE WHEN json_valid(result) THEN json_set(result, ?1, ?2) ELSE result END,
+                result_backup = CASE WHEN json_valid(result_backup) THEN json_set(result_backup, ?1, ?2) ELSE result_backup END
+            WHERE meeting_id = ?3",
+        )
+            .bind(format!("$.{}", KEY_TERMS_FIELD))
+            .bind(key_terms)
+            .bind(meeting_id)
+            .execute(pool)
+            .await?;
+        Ok(())
     }
 
     pub async fn update_process_failed(
@@ -210,6 +226,48 @@ mod tests {
         .execute(pool)
         .await
         .unwrap();
+    }
+
+    #[tokio::test]
+    async fn key_terms_are_written_into_the_stored_result() {
+        let pool = test_pool().await;
+        let started = Utc::now();
+        seed_pending(&pool, "m1", started, Some(r##"{"markdown":"# Notes","key_terms":"Old"}"##), None).await;
+        seed_pending(&pool, "m2", started, Some("not json"), None).await;
+
+        SummaryProcessesRepository::set_key_terms(&pool, "m1", "Rollout with Anya").await.unwrap();
+        SummaryProcessesRepository::set_key_terms(&pool, "m2", "Ignored").await.unwrap();
+
+        let stored = |id: &'static str| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query_scalar::<_, String>("SELECT result FROM summary_processes WHERE meeting_id = ?")
+                    .bind(id)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap()
+            }
+        };
+        let first: Value = serde_json::from_str(&stored("m1").await).unwrap();
+        assert_eq!(first, json!({"markdown": "# Notes", "key_terms": "Rollout with Anya"}));
+        assert_eq!(stored("m2").await, "not json");
+    }
+
+    #[tokio::test]
+    async fn edited_key_terms_survive_a_failed_regeneration() {
+        let pool = test_pool().await;
+        let started = Utc::now();
+        seed_pending(&pool, "m1", started, None, Some(r##"{"markdown":"# Notes","key_terms":"Old"}"##)).await;
+
+        SummaryProcessesRepository::set_key_terms(&pool, "m1", "Rollout with Anya").await.unwrap();
+        assert!(SummaryProcessesRepository::update_process_failed(&pool, "m1", started, "Provider failed").await.unwrap());
+
+        let result: String = sqlx::query_scalar("SELECT result FROM summary_processes WHERE meeting_id = 'm1'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let result: Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(result, json!({"markdown": "# Notes", "key_terms": "Rollout with Anya"}));
     }
 
     #[tokio::test]

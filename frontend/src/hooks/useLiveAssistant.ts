@@ -10,6 +10,8 @@ const EMPTY_STATE: LiveAssistantState = {
   model: '',
   is_cloud: false,
   last_tick_at: null,
+  last_tick_added: null,
+  cards_full: false,
   error: null,
   tick_no: 0,
   progress: 0,

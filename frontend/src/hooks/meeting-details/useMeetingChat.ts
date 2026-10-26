@@ -74,6 +74,20 @@ export function useMeetingChat(meetingId: string) {
 
   const reload = useCallback(() => load(meetingId), [load, meetingId]);
 
+  const editKeyTerms = useCallback(async (keyTerms: string) => {
+    const id = meetingId;
+    try {
+      const saved = await assistantService.updateMeetingKeyTerms(id, keyTerms);
+      if (currentMeeting.current === id) {
+        setMessages((previous) => previous.map((message) => (message.role === 'key_terms' ? { ...message, text: saved } : message)));
+      }
+      return true;
+    } catch (error) {
+      if (currentMeeting.current === id) toast.error('Could not save the key terms', { description: String(error) });
+      return false;
+    }
+  }, [meetingId]);
+
   const dismissError = useCallback(async (messageId: string) => {
     try {
       await assistantService.dismissMeetingChatError(meetingId, messageId);
@@ -83,5 +97,5 @@ export function useMeetingChat(meetingId: string) {
     }
   }, [meetingId]);
 
-  return { messages, context, answering: asking || answeringElsewhere, ask, compact, reload, dismissError };
+  return { messages, context, answering: asking || answeringElsewhere, ask, compact, reload, dismissError, editKeyTerms };
 }

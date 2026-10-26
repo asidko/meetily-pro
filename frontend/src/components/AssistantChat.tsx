@@ -1,14 +1,14 @@
 'use client';
 
-import { Fragment, memo, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { Fragment, memo, useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Copy, Send, X } from 'lucide-react';
+import { Copy, Pencil, Send, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { COMPACT_FROM_PERCENT, contextPercent, splitCitations, type ChatContext, type ChatMessage } from '@/lib/live-assistant';
-import { SCROLL_TO_SEGMENT_EVENT } from '@/components/VirtualizedTranscriptView';
+import { SCROLL_TO_SEGMENT_EVENT, SegmentEditor } from '@/components/VirtualizedTranscriptView';
 import { useAutoHeight } from '@/hooks/useAutoHeight';
 
 function scrollToSegment(atSeconds: number) {
@@ -69,7 +69,45 @@ export function ErrorNote({ children, onClose, className = 'text-sm' }: { childr
   );
 }
 
-const ChatBubble = memo(function ChatBubble({ message, onDismiss }: { message: ChatMessage; onDismiss?: (id: string) => void }) {
+function KeyTermsNote({ text, onEdit }: { text: string; onEdit?: (text: string) => Promise<boolean> }) {
+  const [editing, setEditing] = useState(false);
+
+  const save = async (next: string) => {
+    if (await onEdit?.(next)) setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <div className="rounded-lg border border-dashed border-blue-100 px-2 py-1.5">
+        <SegmentEditor initialText={text} onSave={save} onCancel={() => setEditing(false)} textClassName="text-xs md:text-xs" />
+      </div>
+    );
+  }
+  return (
+    <div className="group relative rounded-lg border border-dashed border-blue-100 py-1.5 pl-3 pr-7 text-xs text-gray-600">
+      <span className="font-medium text-gray-700">Topic and key terms: </span>{text}
+      {onEdit && (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="absolute right-1 top-1 rounded-md p-1 text-gray-400 opacity-0 transition-opacity duration-150 hover:bg-blue-50 hover:text-blue-600 group-hover:opacity-100 focus-visible:opacity-100"
+          aria-label="Edit topic and key terms"
+          title="Edit topic and key terms"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+interface ChatBubbleProps {
+  message: ChatMessage;
+  onDismiss?: (id: string) => void;
+  onEditKeyTerms?: (text: string) => Promise<boolean>;
+}
+
+const ChatBubble = memo(function ChatBubble({ message, onDismiss, onEditKeyTerms }: ChatBubbleProps) {
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
@@ -85,13 +123,7 @@ const ChatBubble = memo(function ChatBubble({ message, onDismiss }: { message: C
       </details>
     );
   }
-  if (message.role === 'key_terms') {
-    return (
-      <div className="rounded-lg border border-dashed border-blue-100 px-3 py-1.5 text-xs text-gray-600">
-        <span className="font-medium text-gray-700">Topic and key terms: </span>{message.text}
-      </div>
-    );
-  }
+  if (message.role === 'key_terms') return <KeyTermsNote text={message.text} onEdit={onEditKeyTerms} />;
   if (message.role === 'recap') {
     return (
       <div className="group relative rounded-lg border border-blue-100 bg-blue-50/70 py-2 pl-3 pr-7 text-sm text-gray-800">
@@ -120,6 +152,7 @@ const ChatBubble = memo(function ChatBubble({ message, onDismiss }: { message: C
   && previous.message.role === next.message.role
   && previous.message.text === next.message.text
   && previous.message.error === next.message.error
+  && previous.onEditKeyTerms === next.onEditKeyTerms
 ));
 
 interface ChatThreadProps {
@@ -132,9 +165,10 @@ interface ChatThreadProps {
   followKey?: string | number;
   hidden?: ReadonlySet<string>;
   onDismissError?: (id: string) => void;
+  onEditKeyTerms?: (text: string) => Promise<boolean>;
 }
 
-export function ChatThread({ messages, pending, emptyHint, lead, trail, after, followKey, hidden, onDismissError }: ChatThreadProps) {
+export function ChatThread({ messages, pending, emptyHint, lead, trail, after, followKey, hidden, onDismissError, onEditKeyTerms }: ChatThreadProps) {
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -149,7 +183,7 @@ export function ChatThread({ messages, pending, emptyHint, lead, trail, after, f
       {after?.(0)}
       {messages.map((message, index) => (
         <Fragment key={message.id}>
-          {!hidden?.has(message.id) && <ChatBubble message={message} onDismiss={onDismissError} />}
+          {!hidden?.has(message.id) && <ChatBubble message={message} onDismiss={onDismissError} onEditKeyTerms={onEditKeyTerms} />}
           {after?.(index + 1)}
         </Fragment>
       ))}
@@ -206,29 +240,95 @@ function ContextMeter({ context, busy, onCompact }: ContextMeterProps) {
   );
 }
 
+export interface ChatComposer {
+  canSend: boolean;
+  disabled: boolean;
+  queue: string[];
+  returned: string;
+  clearReturned: () => void;
+  submit: (text: string) => Promise<void>;
+  unqueue: (index: number) => string;
+  drainQueue: () => string[];
+}
+
+export function useChatComposer(onSend: (question: string) => Promise<boolean>, canSend: boolean, disabled: boolean, initialQueue: () => string[] = () => []): ChatComposer {
+  const [queue, setQueue] = useState<string[]>(initialQueue);
+  const [returned, setReturned] = useState('');
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
+
+  const send = useCallback(async (text: string) => {
+    sendingRef.current = true;
+    setSending(true);
+    try {
+      if (!(await onSend(text))) setReturned((current) => (current ? `${text}\n\n${current}` : text));
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
+    }
+  }, [onSend]);
+
+  useEffect(() => {
+    if (!canSend || disabled || sending || sendingRef.current || queue.length === 0) return;
+    const text = queue.join('\n\n');
+    setQueue([]);
+    void send(text);
+  }, [canSend, disabled, sending, queue, send]);
+
+  const submit = useCallback(async (text: string) => {
+    if (canSend && !sendingRef.current && queue.length === 0) await send(text);
+    else setQueue((current) => [...current, text]);
+  }, [canSend, queue.length, send]);
+
+  const unqueue = useCallback((index: number) => {
+    setQueue((current) => current.filter((_, i) => i !== index));
+    return queue[index];
+  }, [queue]);
+
+  const drainQueue = useCallback(() => {
+    setQueue([]);
+    return queue;
+  }, [queue]);
+
+  const clearReturned = useCallback(() => setReturned(''), []);
+
+  return { canSend, disabled, queue, returned, clearReturned, submit, unqueue, drainQueue };
+}
+
 interface ChatInputProps {
   placeholder: string;
-  disabled: boolean;
-  canSend: boolean;
-  onSend: (question: string) => Promise<boolean>;
+  composer: ChatComposer;
   context?: ChatContext | null;
   onCompact?: () => void;
 }
 
 const MAX_INPUT_HEIGHT = 160;
 
-export function ChatInput({ placeholder, disabled, canSend, onSend, context, onCompact }: ChatInputProps) {
+export function ChatInput({ placeholder, composer, context, onCompact }: ChatInputProps) {
+  const { canSend, disabled, queue, returned, clearReturned } = composer;
   const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useAutoHeight(inputRef, draft, MAX_INPUT_HEIGHT);
 
+  useEffect(() => {
+    if (!returned) return;
+    setDraft((current) => (current.trim() ? `${returned}\n\n${current}` : returned));
+    clearReturned();
+  }, [returned, clearReturned]);
+
+  const unqueue = (index: number) => {
+    const text = composer.unqueue(index);
+    setDraft((current) => (current.trim() ? `${current}\n\n${text}` : text));
+    inputRef.current?.focus();
+  };
+
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
     const text = draft.trim();
-    if (!text || !canSend) return;
+    if (!text || disabled) return;
     setDraft('');
-    if (!(await onSend(text))) setDraft(text);
+    await composer.submit(text);
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -239,6 +339,24 @@ export function ChatInput({ placeholder, disabled, canSend, onSend, context, onC
 
   return (
     <form onSubmit={submit} className="p-3 border-t border-gray-200">
+      {queue.length > 0 && (
+        <div className="mb-2 space-y-1">
+          {queue.map((text, index) => (
+            <div key={index} className="group flex items-start gap-2 rounded-md border border-dashed border-gray-300 px-2 py-1 text-xs text-gray-600">
+              <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{text}</span>
+              <span className="shrink-0 text-[10px] text-gray-400">Queued</span>
+              <button
+                type="button"
+                onClick={() => unqueue(index)}
+                className="shrink-0 text-gray-400 hover:text-gray-700"
+                title="Back to the input"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="flex items-end gap-2">
         {context && context.used > 0 && onCompact && <ContextMeter context={context} busy={!canSend} onCompact={onCompact} />}
         <Textarea
@@ -252,7 +370,13 @@ export function ChatInput({ placeholder, disabled, canSend, onSend, context, onC
           className="min-h-9 resize-none py-2 text-sm"
           style={{ maxHeight: MAX_INPUT_HEIGHT }}
         />
-        <Button type="submit" size="sm" className="h-9 px-3" disabled={!canSend || !draft.trim()} title="Send (Shift+Enter for a new line)">
+        <Button
+          type="submit"
+          size="sm"
+          className="h-9 px-3"
+          disabled={disabled || !draft.trim()}
+          title={canSend ? 'Send (Shift+Enter for a new line)' : 'Queue, sent together when the current answer arrives'}
+        >
           <Send size={14} />
         </Button>
       </div>

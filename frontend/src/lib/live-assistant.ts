@@ -18,6 +18,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant' | 'summary' | 'recap' | 'key_terms';
   text: string;
   error: boolean;
+  cards_note?: boolean;
 }
 
 export interface ChatContext {
@@ -40,6 +41,8 @@ export interface LiveAssistantState {
   model: string;
   is_cloud: boolean;
   last_tick_at: string | null;
+  last_tick_added: number | null;
+  cards_full: boolean;
   error: string | null;
   tick_no: number;
   progress: number;
@@ -83,6 +86,54 @@ export function writePanelOpen(open: boolean): void {
   } catch {
     return;
   }
+}
+
+const PANEL_WIDTH_KEY = 'assistant_panel_width';
+export const PANEL_DEFAULT_WIDTH = 320;
+const PANEL_MIN_WIDTH = 280;
+const PANEL_MAX_SHARE = 0.6;
+
+export function clampPanelWidth(width: number, viewportWidth: number): number {
+  const max = Math.max(PANEL_MIN_WIDTH, Math.floor(viewportWidth * PANEL_MAX_SHARE));
+  return Math.round(Math.min(max, Math.max(PANEL_MIN_WIDTH, width)));
+}
+
+export function panelWidthCss(width: number): string {
+  return `min(${width}px, max(${PANEL_MIN_WIDTH}px, ${PANEL_MAX_SHARE * 100}vw))`;
+}
+
+export function readPanelWidth(): number {
+  try {
+    const stored = Number(localStorage.getItem(PANEL_WIDTH_KEY));
+    return Number.isFinite(stored) && stored > 0 ? stored : PANEL_DEFAULT_WIDTH;
+  } catch {
+    return PANEL_DEFAULT_WIDTH;
+  }
+}
+
+export function writePanelWidth(width: number): void {
+  try {
+    localStorage.setItem(PANEL_WIDTH_KEY, String(width));
+  } catch {
+    return;
+  }
+}
+
+let carried: { meetingId: string | null; items: string[] } = { meetingId: null, items: [] };
+
+export function carryQueue(items: string[]): void {
+  carried = { ...carried, items };
+}
+
+export function bindCarriedQueue(meetingId: string): void {
+  carried = { ...carried, meetingId };
+}
+
+export function takeCarriedQueue(meetingId: string): string[] {
+  if (carried.meetingId !== meetingId) return [];
+  const { items } = carried;
+  carried = { meetingId: null, items: [] };
+  return items;
 }
 
 function idNumber(id: string): number {

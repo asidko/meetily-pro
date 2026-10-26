@@ -11,6 +11,7 @@ use anyhow::{anyhow, Result};
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
@@ -20,6 +21,7 @@ use uuid::Uuid;
 use super::audio_processing::create_meeting_folder;
 use super::common::{create_transcript_segments, split_segment_at_silence, write_transcripts_json};
 use super::constants::AUDIO_EXTENSIONS;
+use super::ffmpeg::find_ffmpeg_path;
 use super::recording_preferences::get_default_recordings_folder;
 
 /// Global flag to track if import is in progress
@@ -345,23 +347,18 @@ async fn run_import<R: Runtime>(
     // Copy audio file to meeting folder
     emit_progress(&app, "copying", 10, "Copying audio file...");
 
-    let dest_filename = format!(
-        "audio.{}",
-        source
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("mp4")
-    );
-    let dest_path = meeting_folder.join(&dest_filename);
-
     let src = source.clone();
-    let dst = dest_path.clone();
-    tokio::task::spawn_blocking(move || std::fs::copy(&src, &dst))
+    let folder = meeting_folder.clone();
+    let dest_path = tokio::task::spawn_blocking(move || store_source_audio(&src, &folder))
         .await
-        .map_err(|e| anyhow!("Copy task join error: {}", e))?
-        .map_err(|e| anyhow!("Failed to copy audio file: {}", e))?;
+        .map_err(|e| anyhow!("Copy task join error: {}", e))??;
+    let dest_filename = dest_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("audio.mp4")
+        .to_string();
 
-    info!("Copied audio to: {}", dest_path.display());
+    info!("Stored audio at: {}", dest_path.display());
 
     // Check for cancellation
     if IMPORT_CANCELLED.load(Ordering::SeqCst) {
@@ -693,6 +690,62 @@ async fn run_import<R: Runtime>(
         segments_count: segments.len(),
         duration_seconds,
     })
+}
+
+fn store_source_audio(source: &Path, meeting_folder: &Path) -> Result<PathBuf> {
+    let extension = source
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("mp4")
+        .to_lowercase();
+
+    if extension == "mp4" {
+        if let Some(extracted) = extract_audio_stream(source, meeting_folder) {
+            return Ok(extracted);
+        }
+    }
+
+    let dest = meeting_folder.join(format!("audio.{}", extension));
+    std::fs::copy(source, &dest).map_err(|e| anyhow!("Failed to copy audio file: {}", e))?;
+    Ok(dest)
+}
+
+fn extract_audio_stream(source: &Path, meeting_folder: &Path) -> Option<PathBuf> {
+    let ffmpeg_path = find_ffmpeg_path()?;
+    let dest = meeting_folder.join("audio.m4a");
+
+    let mut command = Command::new(&ffmpeg_path);
+    command
+        .args(["-hide_banner", "-nostats", "-loglevel", "error", "-i"])
+        .arg(source)
+        .args(["-map", "0:a:0", "-c", "copy", "-y"])
+        .arg(&dest)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    match command.output() {
+        Ok(output) if output.status.success() => Some(dest),
+        Ok(output) => {
+            warn!(
+                "Audio stream copy failed, copying the whole file instead: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let _ = std::fs::remove_file(&dest);
+            None
+        }
+        Err(e) => {
+            warn!("Failed to run ffmpeg for audio stream copy: {}", e);
+            None
+        }
+    }
 }
 
 /// Emit progress event
@@ -1260,6 +1313,73 @@ mod tests {
         assert_eq!(parsed["audio_file"], "audio.mp4");
         assert_eq!(parsed["status"], "completed");
         assert_eq!(parsed["source"], "import");
+    }
+
+    fn make_test_video(dir: &Path, name: &str, with_audio: bool) -> Option<PathBuf> {
+        let ffmpeg_path = find_ffmpeg_path()?;
+        let path = dir.join(name);
+        let mut command = Command::new(ffmpeg_path);
+        command.args(["-f", "lavfi", "-i", "testsrc=duration=2:size=320x240:rate=10"]);
+        if with_audio {
+            command.args(["-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-c:a", "aac"]);
+        }
+        let status = command
+            .args(["-c:v", "mpeg4", "-shortest", "-y"])
+            .arg(&path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .ok()?;
+        status.success().then_some(path)
+    }
+
+    #[test]
+    fn test_store_source_audio_extracts_mp4_audio_track() {
+        let dir = tempfile::tempdir().unwrap();
+        let Some(video) = make_test_video(dir.path(), "Talk.MP4", true) else {
+            return;
+        };
+        let meeting_folder = dir.path().join("meeting");
+        std::fs::create_dir(&meeting_folder).unwrap();
+
+        let stored = store_source_audio(&video, &meeting_folder).unwrap();
+
+        assert_eq!(stored, meeting_folder.join("audio.m4a"));
+        assert!(!meeting_folder.join("audio.mp4").exists());
+        assert!(std::fs::metadata(&stored).unwrap().len() < std::fs::metadata(&video).unwrap().len());
+        let decoded = decode_audio_file(&stored).unwrap();
+        assert!((decoded.duration_seconds - 2.0).abs() < 0.2, "duration {}", decoded.duration_seconds);
+    }
+
+    #[test]
+    fn test_store_source_audio_copies_mp4_without_audio_track() {
+        let dir = tempfile::tempdir().unwrap();
+        let Some(video) = make_test_video(dir.path(), "silent.mp4", false) else {
+            return;
+        };
+        let meeting_folder = dir.path().join("meeting");
+        std::fs::create_dir(&meeting_folder).unwrap();
+
+        let stored = store_source_audio(&video, &meeting_folder).unwrap();
+
+        assert_eq!(stored, meeting_folder.join("audio.mp4"));
+        assert!(!meeting_folder.join("audio.m4a").exists());
+        assert_eq!(std::fs::read(&stored).unwrap(), std::fs::read(&video).unwrap());
+    }
+
+    #[test]
+    fn test_store_source_audio_copies_other_formats() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("Call.WAV");
+        std::fs::write(&source, b"not really audio").unwrap();
+        let meeting_folder = dir.path().join("meeting");
+        std::fs::create_dir(&meeting_folder).unwrap();
+
+        let stored = store_source_audio(&source, &meeting_folder).unwrap();
+
+        assert_eq!(stored, meeting_folder.join("audio.wav"));
+        assert_eq!(std::fs::read(&stored).unwrap(), b"not really audio");
     }
 
     /// Integration test that decodes a real audio file and runs VAD.

@@ -1,13 +1,18 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  bindCarriedQueue,
   buildPinnedPromptSection,
+  carryQueue,
   chatTimeline,
+  clampPanelWidth,
   contextPercent,
   describeAge,
   formatClock,
   sortSuggestions,
+  panelWidthCss,
   splitCitations,
   suggestionQuestion,
+  takeCarriedQueue,
   type Suggestion,
 } from '../../src/lib/live-assistant';
 
@@ -91,5 +96,28 @@ describe('live assistant helpers', () => {
     expect(contextPercent({ used: 4100, limit: 8000 })).toBe(51);
     expect(contextPercent({ used: 12000, limit: 8000 })).toBe(150);
     expect(contextPercent({ used: 50, limit: 0 })).toBe(0);
+  });
+
+  test('keeps the assistant panel width between its minimum and 60% of the window', () => {
+    expect(clampPanelWidth(500, 1600)).toBe(500);
+    expect(clampPanelWidth(100, 1600)).toBe(280);
+    expect(clampPanelWidth(1200, 1600)).toBe(960);
+    expect(clampPanelWidth(400, 300)).toBe(280);
+    expect(panelWidthCss(500)).toBe('min(500px, max(280px, 60vw))');
+  });
+
+  test('hands questions still queued at the end of a recording only to the meeting it was saved as, once', () => {
+    carryQueue(['First question', 'Second question']);
+    expect(takeCarriedQueue('m1')).toEqual([]);
+    bindCarriedQueue('m1');
+    expect(takeCarriedQueue('m2')).toEqual([]);
+    expect(takeCarriedQueue('m1')).toEqual(['First question', 'Second question']);
+    expect(takeCarriedQueue('m1')).toEqual([]);
+  });
+
+  test('hands the queue over whether the meeting is saved before or after the panel lets go of it', () => {
+    bindCarriedQueue('m3');
+    carryQueue(['Late question']);
+    expect(takeCarriedQueue('m3')).toEqual(['Late question']);
   });
 });

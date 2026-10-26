@@ -1,23 +1,34 @@
 'use client';
 
-import { memo, useCallback, useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pause, Play, RefreshCw, Sparkles, ChevronRight, ChevronLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useLiveAssistant } from '@/hooks/useLiveAssistant';
 import { catalogLabel } from '@/lib/model-catalog';
-import { chatTimeline, describeAge, suggestionQuestion } from '@/lib/live-assistant';
+import { carryQueue, chatTimeline, clampPanelWidth, describeAge, panelWidthCss, suggestionQuestion, writePanelWidth } from '@/lib/live-assistant';
 import { assistantService } from '@/services/assistantService';
-import { ChatInput, ChatThread, ErrorNote } from '@/components/AssistantChat';
+import { ChatInput, ChatThread, ErrorNote, useChatComposer } from '@/components/AssistantChat';
 import { SuggestionCard } from '@/components/SuggestionCard';
 
 interface AssistantPanelProps {
   open: boolean;
   isRecording: boolean;
   onToggle: () => void;
+  width: number;
+  onWidthChange: (width: number) => void;
 }
 
-function NextTickBar({ initial, generating, local }: { initial: number; generating: boolean; local: boolean }) {
+interface NextTickBarProps {
+  initial: number;
+  generating: boolean;
+  local: boolean;
+  nothingNew: boolean;
+  cardsFull: boolean;
+  onSuggestNow: () => void;
+}
+
+function NextTickBar({ initial, generating, local, nothingNew, cardsFull, onSuggestNow }: NextTickBarProps) {
   const [progress, setProgress] = useState(initial);
 
   useEffect(() => {
@@ -43,23 +54,41 @@ function NextTickBar({ initial, generating, local }: { initial: number; generati
   let label = `Next tip ${progress}%`;
   if (generating) label = local ? 'Thinking... the transcript catches up after' : 'Thinking...';
   else if (progress >= 100) label = 'Waiting for a pause in speech';
+  else if (nothingNew && cardsFull) label = 'Cards full. Close one for new tips';
+  else if (nothingNew) label = `Nothing new last check. Next tip ${progress}%`;
 
   return (
     <div className="space-y-1" title="Fills as the conversation gives the assistant enough to work with">
       <Progress value={generating ? 100 : progress} className={`h-1.5 ${generating ? 'animate-pulse' : ''}`} />
-      <div className="text-[11px] text-gray-500">{label}</div>
+      <div className="flex items-center justify-between gap-2 text-[11px] text-gray-500">
+        <span>{label}</span>
+        {nothingNew && !cardsFull && !generating && (
+          <button type="button" onClick={onSuggestNow} className="shrink-0 rounded px-1.5 py-0.5 font-medium text-blue-600 hover:bg-blue-50">
+            Suggest now
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
-export const AssistantPanel = memo(function AssistantPanel({ open, isRecording, onToggle }: AssistantPanelProps) {
+export const AssistantPanel = memo(function AssistantPanel({ open, isRecording, onToggle, width, onWidthChange }: AssistantPanelProps) {
   const { state, pin, dismiss, refresh, setPaused, ask, compact, start } = useLiveAssistant();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ right: number; width: number } | null>(null);
   const suggestions = state.suggestions;
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [, setClock] = useState(0);
   const [errorHidden, setErrorHidden] = useState(false);
   const [hiddenChat, setHiddenChat] = useState<ReadonlySet<string>>(() => new Set());
   const chatLength = state.chat.length;
+  const canChat = state.active && !state.chat_pending;
+  const composer = useChatComposer(ask, canChat, !state.active);
+  const { queue, drainQueue } = composer;
+
+  useEffect(() => {
+    if (!isRecording && queue.length > 0) carryQueue(drainQueue());
+  }, [isRecording, queue, drainQueue]);
 
   useEffect(() => {
     setErrorHidden(false);
@@ -68,6 +97,11 @@ export const AssistantPanel = memo(function AssistantPanel({ open, isRecording, 
   useEffect(() => {
     if (chatLength === 0) setHiddenChat(new Set());
   }, [chatLength]);
+
+  const hiddenMessages = useMemo(
+    () => new Set([...hiddenChat, ...state.chat.filter((message) => message.cards_note).map((message) => message.id)]),
+    [hiddenChat, state.chat],
+  );
 
   const hideChatError = useCallback((id: string) => {
     setHiddenChat((previous) => new Set(previous).add(id));
@@ -83,6 +117,38 @@ export const AssistantPanel = memo(function AssistantPanel({ open, isRecording, 
     const interval = setInterval(() => setClock((n) => n + 1), 10_000);
     return () => clearInterval(interval);
   }, [open]);
+
+  const onResizeStart = useCallback((event: React.PointerEvent) => {
+    if (!panelRef.current) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    drag.current = { right: panelRef.current.getBoundingClientRect().right, width: clampPanelWidth(width, window.innerWidth) };
+    panelRef.current.parentElement?.setAttribute('data-resizing', '');
+  }, [width]);
+
+  const onResizeMove = useCallback((event: React.PointerEvent) => {
+    if (!drag.current) return;
+    drag.current.width = clampPanelWidth(drag.current.right - event.clientX, window.innerWidth);
+    panelRef.current?.parentElement?.style.setProperty('--assistant-width', panelWidthCss(drag.current.width));
+  }, []);
+
+  const onResizeEnd = useCallback(() => {
+    if (!drag.current) return;
+    const finalWidth = drag.current.width;
+    drag.current = null;
+    panelRef.current?.parentElement?.removeAttribute('data-resizing');
+    onWidthChange(finalWidth);
+    writePanelWidth(finalWidth);
+  }, [onWidthChange]);
+
+  const onResizeKey = useCallback((event: React.KeyboardEvent) => {
+    const step = event.key === 'ArrowLeft' ? 32 : event.key === 'ArrowRight' ? -32 : 0;
+    if (!step) return;
+    event.preventDefault();
+    const next = clampPanelWidth(width + step, window.innerWidth);
+    onWidthChange(next);
+    writePanelWidth(next);
+  }, [width, onWidthChange]);
 
   const openCount = suggestions.filter((item) => !item.dismissed).length;
 
@@ -107,8 +173,6 @@ export const AssistantPanel = memo(function AssistantPanel({ open, isRecording, 
   const paused = state.status === 'paused';
   const errored = state.status === 'error';
 
-  const canChat = state.active && !state.chat_pending;
-
   let emptyMessage: string | null = null;
   if (visible.length === 0) {
     if (!state.active && enabled === false) emptyMessage = 'Turn on the live assistant in Settings, Models.';
@@ -120,7 +184,22 @@ export const AssistantPanel = memo(function AssistantPanel({ open, isRecording, 
   }
 
   return (
-    <div className="w-[320px] shrink-0 border-l border-gray-200 bg-white flex flex-col h-full">
+    <div ref={panelRef} className="relative w-[var(--assistant-width)] shrink-0 border-l border-gray-200 bg-white flex flex-col h-full">
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize assistant"
+        aria-valuenow={width}
+        tabIndex={0}
+        className="group absolute inset-y-0 -left-1 z-10 flex w-2 cursor-col-resize justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset"
+        onPointerDown={onResizeStart}
+        onPointerMove={onResizeMove}
+        onPointerUp={onResizeEnd}
+        onPointerCancel={onResizeEnd}
+        onKeyDown={onResizeKey}
+      >
+        <div className="h-full w-px transition-[width,background-color] duration-150 ease-out group-hover:w-1 group-hover:bg-blue-400 group-active:w-1 group-active:bg-blue-500" />
+      </div>
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-gray-200 px-3">
         <div className="flex items-center gap-2">
           <Sparkles size={16} className="text-blue-600" />
@@ -155,7 +234,7 @@ export const AssistantPanel = memo(function AssistantPanel({ open, isRecording, 
               <span className={age.stale ? 'text-orange-600' : 'text-gray-500'}>{age.label}</span>
             </div>
           )}
-          {state.active && !paused && !errored && <NextTickBar initial={state.progress} generating={generating} local={!state.is_cloud} />}
+          {state.active && !paused && !errored && <NextTickBar initial={state.progress} generating={generating} local={!state.is_cloud} nothingNew={state.last_tick_added === 0} cardsFull={state.cards_full} onSuggestNow={refresh} />}
           {state.error && !errorHidden && (
             <ErrorNote className="text-xs" onClose={() => setErrorHidden(true)}>
               {state.error}{' '}
@@ -177,7 +256,7 @@ export const AssistantPanel = memo(function AssistantPanel({ open, isRecording, 
           </div>
         )}
         emptyHint={state.active ? 'Ask anything about the conversation. Click a suggestion to ask about it.' : undefined}
-        hidden={hiddenChat}
+        hidden={hiddenMessages}
         onDismissError={hideChatError}
         after={(count) => slots[count]?.map((item) => (
           <SuggestionCard
@@ -189,7 +268,7 @@ export const AssistantPanel = memo(function AssistantPanel({ open, isRecording, 
           />
         ))}
       />
-      <ChatInput placeholder={state.active ? 'Ask the assistant' : 'Start recording to chat'} disabled={!state.active} canSend={canChat} onSend={ask} context={state.chat_context} onCompact={compact} />
+      <ChatInput placeholder={state.active ? 'Ask the assistant' : 'Start recording to chat'} composer={composer} context={state.chat_context} onCompact={compact} />
     </div>
   );
 });

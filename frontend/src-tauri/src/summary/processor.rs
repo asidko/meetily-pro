@@ -125,7 +125,7 @@ pub(crate) async fn generate_key_terms(
     }
 }
 
-fn plain_key_terms(text: &str) -> Option<String> {
+pub(crate) fn plain_key_terms(text: &str) -> Option<String> {
     let terms: String = text
         .replace(['#', '*', '`'], "")
         .split_whitespace()
