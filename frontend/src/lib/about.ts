@@ -8,10 +8,10 @@ export interface ReleaseHighlights {
 
 export const WHATS_NEW: ReleaseHighlights[] = [
   {
-    version: '1.9.1',
+    version: '1.10.0',
     highlights: [
-      'Report a Bug opens a GitHub issue with your app and system details filled in',
-      'About shows recent changes, credits and licenses',
+      'Video imports keep only the sound, and the assistant panel can be resized',
+      'Queue chat messages while the assistant answers, and edit the key terms',
     ],
   },
   {
