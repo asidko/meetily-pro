@@ -21,6 +21,7 @@ import { DownloadProgressToastProvider } from '@/components/shared/DownloadProgr
 import { UpdateCheckProvider } from '@/components/UpdateCheckProvider'
 import { RecordingPostProcessingProvider } from '@/contexts/RecordingPostProcessingProvider'
 import { ImportAudioDialog, ImportDropOverlay } from '@/components/ImportAudio'
+import type { PreselectedFile } from '@/components/ImportAudio/ImportAudioDialog'
 import { ImportDialogProvider } from '@/contexts/ImportDialogContext'
 import { isAudioExtension, getAudioFormatsDisplayList } from '@/constants/audioFormats'
 
@@ -43,7 +44,7 @@ export default function RootLayout({
   // Import audio state
   const [showDropOverlay, setShowDropOverlay] = useState(false)
   const [showImportDialog, setShowImportDialog] = useState(false)
-  const [importFilePath, setImportFilePath] = useState<string | null>(null)
+  const [importFile, setImportFile] = useState<PreselectedFile | null>(null)
 
   useEffect(() => {
     // Check onboarding status first
@@ -96,6 +97,12 @@ export default function RootLayout({
     };
   }, [showOnboarding]);
 
+  // Handler for ImportDialogProvider - opens import dialog from any child component
+  const handleOpenImportDialog = useCallback((filePath?: string | null) => {
+    setImportFile(filePath ? { path: filePath } : null);
+    setShowImportDialog(true);
+  }, []);
+
   // Handle file drop for audio import
   const handleFileDrop = useCallback((paths: string[]) => {
     // Find the first audio file
@@ -106,14 +113,13 @@ export default function RootLayout({
 
     if (audioFile) {
       console.log('[Layout] Audio file dropped:', audioFile);
-      setImportFilePath(audioFile);
-      setShowImportDialog(true);
+      handleOpenImportDialog(audioFile);
     } else if (paths.length > 0) {
       toast.error('Please drop an audio file', {
         description: `Supported formats: ${getAudioFormatsDisplayList()}`
       });
     }
-  }, []);
+  }, [handleOpenImportDialog]);
 
   // Listen for drag-drop events
   useEffect(() => {
@@ -168,14 +174,8 @@ export default function RootLayout({
   const handleImportDialogClose = useCallback((open: boolean) => {
     setShowImportDialog(open);
     if (!open) {
-      setImportFilePath(null);
+      setImportFile(null);
     }
-  }, []);
-
-  // Handler for ImportDialogProvider - opens import dialog from any child component
-  const handleOpenImportDialog = useCallback((filePath?: string | null) => {
-    setImportFilePath(filePath ?? null);
-    setShowImportDialog(true);
   }, []);
 
   const handleOnboardingComplete = () => {
@@ -216,7 +216,7 @@ export default function RootLayout({
                             <ImportAudioDialog
                               open={showImportDialog}
                               onOpenChange={handleImportDialogClose}
-                              preselectedFile={importFilePath}
+                              preselectedFile={importFile}
                             />
                           </ImportDialogProvider>
                         </RecordingPostProcessingProvider>

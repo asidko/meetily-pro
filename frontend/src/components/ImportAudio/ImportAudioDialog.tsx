@@ -32,18 +32,21 @@ import {
 } from '../ui/select';
 import { toast } from 'sonner';
 import { useConfig } from '@/contexts/ConfigContext';
-import { useImportAudio, ImportResult } from '@/hooks/useImportAudio';
+import { useImportAudio, ImportResult, AudioFileInfo } from '@/hooks/useImportAudio';
 import { useRouter } from 'next/navigation';
 import { useSidebar } from '../Sidebar/SidebarProvider';
 import { LANGUAGES } from '@/constants/languages';
 import { useTranscriptionModels, ModelOption } from '@/hooks/useTranscriptionModels';
 import { isCloudSpeech } from '@/lib/model-catalog';
+import { getAudioFormatsDisplayList } from '@/constants/audioFormats';
 
+
+export type PreselectedFile = { path: string };
 
 interface ImportAudioDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  preselectedFile?: string | null;
+  preselectedFile?: PreselectedFile | null;
   onComplete?: () => void;
 }
 
@@ -84,6 +87,13 @@ export function ImportAudioDialog({
   // Do NOT initialize from the `open` prop: if the component mounts with open=true
   // (e.g. drag-drop path), we still need the initialization effect to run.
   const prevOpenRef = useRef(false);
+  const handledFileRef = useRef<PreselectedFile | null>(null);
+
+  const applyFile = (info: AudioFileInfo | null) => {
+    if (!info) return;
+    setTitle(info.filename);
+    setTitleModifiedByUser(false);
+  };
 
   // Use centralized model fetching hook
   const {
@@ -141,26 +151,16 @@ export function ImportAudioDialog({
       setSelectedLang(selectedLanguage || 'auto');
       setShowAdvanced(false);
 
-      // Validate preselected file if provided
-      if (preselectedFile) {
-        validateFile(preselectedFile).then((info) => {
-          if (info) {
-            setTitle(info.filename);
-          }
-        });
-      }
-
       // Fetch available models using centralized hook
       fetchModels();
     }
-  }, [open, preselectedFile, selectedLanguage, transcriptModelConfig, reset, resetSelection, validateFile, fetchModels]);
+  }, [open, selectedLanguage, transcriptModelConfig, reset, resetSelection, fetchModels]);
 
-  // Update title when fileInfo changes
   useEffect(() => {
-    if (fileInfo && !title && !titleModifiedByUser) {
-      setTitle(fileInfo.filename);
-    }
-  }, [fileInfo, title, titleModifiedByUser]);
+    if (!open || !preselectedFile || isBusy || preselectedFile === handledFileRef.current) return;
+    handledFileRef.current = preselectedFile;
+    validateFile(preselectedFile.path).then(applyFile);
+  }, [open, preselectedFile, isBusy, validateFile]);
 
   const selectedModel = useMemo((): ModelOption | undefined => {
     if (!selectedModelKey) return undefined;
@@ -180,10 +180,7 @@ export function ImportAudioDialog({
   }, [isParakeetModel, isCloudModel, selectedLang]);
 
   const handleSelectFile = async () => {
-    const info = await selectFile();
-    if (info) {
-      setTitle(info.filename);
-    }
+    applyFile(await selectFile());
   };
 
   const handleStartImport = async () => {
@@ -323,7 +320,8 @@ export function ImportAudioDialog({
                       </>
                     )}
                   </Button>
-                  <p className="text-sm text-gray-500 mt-2">MP4, WAV, MP3, FLAC, OGG, MKV, WebM, WMA</p>
+                  <p className="text-sm text-gray-500 mt-2">or drop a file here</p>
+                  <p className="text-sm text-gray-500 mt-1">{getAudioFormatsDisplayList()}</p>
                 </div>
               )}
 
@@ -447,7 +445,7 @@ export function ImportAudioDialog({
               <Button
                 onClick={handleStartImport}
                 className="bg-blue-600 hover:bg-blue-700"
-                disabled={!fileInfo}
+                disabled={!fileInfo || isBusy}
               >
                 <Upload className="h-4 w-4 mr-2" />
                 Import
