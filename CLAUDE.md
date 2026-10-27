@@ -51,7 +51,7 @@ cargo test -p meetily                  # full; first run compiles whisper.cpp vi
 cargo test -p meetily decoder          # filter by name
 ```
 
-CI: `.github/workflows/ci.yml` runs on push to `main` and on every PR: `pnpm lint`, `tsc --noEmit`, `pnpm test`, then builds the llama-helper sidecar and runs `cargo test -p meetily --locked` on Ubuntu. `release.yml` runs on a `v*` tag push: drafts the release, builds an ad-hoc signed macOS arm64 `.dmg` and a Linux x86_64 `.deb`, uploads `SHA256SUMS`, then publishes. Notes take the README "What's new" block for the tag. The upstream `build*.yml` workflows stay `workflow_dispatch` only and need upstream signing secrets. Toolchain pins: `rust-toolchain.toml` (1.96.0), `frontend/.nvmrc` (20), `packageManager` in package.json.
+CI: `.github/workflows/ci.yml` runs on push to `main` and on every PR: `pnpm lint`, `tsc --noEmit`, `pnpm test`, then builds the llama-helper sidecar and runs `cargo test -p meetily --locked` on Ubuntu. `release.yml` runs on a `v*` tag push: drafts the release, builds an ad-hoc signed macOS arm64 app packed by `frontend/src-tauri/dmg/build-dmg.sh` (dmgbuild: large icons, arrow to Applications, fails without the Finder layout) into a `.dmg`, and a Linux x86_64 `.deb`, uploads `SHA256SUMS`, then publishes. Notes take the README "What's new" block for the tag. The upstream `build*.yml` workflows stay `workflow_dispatch` only and need upstream signing secrets. Toolchain pins: `rust-toolchain.toml` (1.96.0), `frontend/.nvmrc` (20), `packageManager` in package.json.
 
 ## Branches, versions, commits
 
