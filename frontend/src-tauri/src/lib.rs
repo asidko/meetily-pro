@@ -466,6 +466,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(whisper_engine::parallel_commands::ParallelProcessorState::new())
         .manage(Arc::new(RwLock::new(
             None::<notifications::manager::NotificationManager<tauri::Wry>>,
@@ -722,6 +723,9 @@ pub fn run() {
             api::debug_backend_connection,
             api::open_external_url,
             release_check::check_latest_release,
+            release_check::install_update,
+            release_check::get_update_check_on_startup,
+            release_check::set_update_check_on_startup,
             bug_report::bug_report_url,
             // Custom OpenAI commands
             api::api_save_custom_openai_config,

@@ -108,5 +108,13 @@
                 "replaces": ["meetily"]
             }
         }
+    },
+    "plugins": {
+        "updater": {
+            "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDEwNDgzRTBFRTBDMTg1RTAKUldUZ2hjSGdEajVJRUw0LzNwdHJhOTU2MjNmeDhkcmd6b1BEWFV2eDFZUkpuV0JoRG81QjNvQVAK",
+            "endpoints": [
+                "https://github.com/asidko/meetily-pro/releases/latest/download/latest.json"
+            ]
+        }
     }
 }
