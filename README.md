@@ -32,6 +32,13 @@ The macOS app is ad-hoc signed, not notarized. After dragging it to Applications
 
 ## What's new
 
+### v1.10.1
+
+- The app now updates itself: Update and Restart downloads the new version, checks it is genuine, installs it and reopens. Turn off the automatic check in Settings if you prefer.
+- Fedora, RHEL and openSUSE get their own package next to the Ubuntu one, and both are half the size because they use the ffmpeg already on your computer.
+- The Mac installer opens a tidy window: drag the app onto Applications.
+- Drop an audio file straight onto the open import window, and resize the assistant panel during a call.
+
 ### v1.10.0
 
 - Importing a video keeps only its sound, so the import is fast and takes little space.
@@ -46,13 +53,6 @@ The macOS app is ad-hoc signed, not notarized. After dragging it to Applications
 - Tips from the assistant now appear in the chat in the order they come, right after your questions and answers.
 - Chat errors show the real reason from the AI service and can be closed with a cross.
 - Check for Updates looks at the latest release on GitHub and links to its download page.
-
-### v1.8.0
-
-- Retranscribe a meeting or import a recording with the OpenAI or OpenRouter speech models too.
-- Each summary comes with a short note on the meeting's topic and key terms, shown in the chat just before it.
-- When retranscribing with OpenAI, that note helps the model spell names and jargon right.
-- The About window now shows only the version, updates and links.
 
 ## Features
 
