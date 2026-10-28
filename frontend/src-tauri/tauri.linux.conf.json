@@ -1,0 +1,15 @@
+{
+    "bundle": {
+        "externalBin": [
+            "binaries/llama-helper"
+        ],
+        "linux": {
+            "deb": {
+                "depends": ["ffmpeg"]
+            },
+            "rpm": {
+                "depends": ["/usr/bin/ffmpeg"]
+            }
+        }
+    }
+}

@@ -29,7 +29,7 @@ pnpm exec tsc --noEmit                # typecheck; tsconfig excludes src-tauri
 
 `./clean_run.sh [info|debug|trace]` and `./clean_build.sh` are macOS convenience scripts: they delete node_modules/.next, reinstall, set `RUST_LOG`, then run tauri dev/build. `clean_build.sh` also wipes `target/`.
 
-The sidecar: `tauri.conf.json` lists `binaries/llama-helper` and `binaries/ffmpeg` as `externalBin`. `build.rs` downloads ffmpeg (and on Windows `onnxruntime.dll`, sha-pinned) into `src-tauri/binaries/` at compile time, so the first build needs network. llama-helper is only produced by the `dev-gpu`/`build-gpu` scripts (`cargo build -p llama-helper [--features metal|cuda|vulkan]` plus a copy named `llama-helper-<target-triple>`); `tauri-build` resolves `externalBin` entries at compile time, so run one of those scripts before a bare `tauri dev`/`tauri build`.
+The sidecar: `tauri.conf.json` lists `binaries/llama-helper` and `binaries/ffmpeg` as `externalBin`. `build.rs` downloads ffmpeg on macOS and Windows (and on Windows `onnxruntime.dll`, sha-pinned) into `src-tauri/binaries/` at compile time, so the first build needs network. llama-helper is only produced by the `dev-gpu`/`build-gpu` scripts (`cargo build -p llama-helper [--features metal|cuda|vulkan]` plus a copy named `llama-helper-<target-triple>`); `tauri-build` resolves `externalBin` entries at compile time, so run one of those scripts before a bare `tauri dev`/`tauri build`.
 
 ### Tests
 
@@ -51,7 +51,7 @@ cargo test -p meetily                  # full; first run compiles whisper.cpp vi
 cargo test -p meetily decoder          # filter by name
 ```
 
-CI: `.github/workflows/ci.yml` runs on push to `main` and on every PR: `pnpm lint`, `tsc --noEmit`, `pnpm test`, then builds the llama-helper sidecar and runs `cargo test -p meetily --locked` on Ubuntu. `release.yml` runs on a `v*` tag push: drafts the release, builds an ad-hoc signed macOS arm64 app packed by `frontend/src-tauri/dmg/build-dmg.sh` (dmgbuild: large icons, arrow to Applications, fails without the Finder layout) into a `.dmg`, and a Linux x86_64 `.deb`, uploads `SHA256SUMS`, then publishes. Notes take the README "What's new" block for the tag. The upstream `build*.yml` workflows stay `workflow_dispatch` only and need upstream signing secrets. Toolchain pins: `rust-toolchain.toml` (1.96.0), `frontend/.nvmrc` (20), `packageManager` in package.json.
+CI: `.github/workflows/ci.yml` runs on push to `main` and on every PR: `pnpm lint`, `tsc --noEmit`, `pnpm test`, then builds the llama-helper sidecar and runs `cargo test -p meetily --locked` on Ubuntu. `release.yml` runs on a `v*` tag push: drafts the release, builds an ad-hoc signed macOS arm64 app packed by `frontend/src-tauri/dmg/build-dmg.sh` (dmgbuild: large icons, arrow to Applications, fails without the Finder layout) into a `.dmg`, and Linux x86_64 `.deb` and `.rpm` packages, signs the updater bundles (`.app.tar.gz`, `.deb`, `.rpm`), uploads their `.sig` files, `SHA256SUMS` and `latest.json`, then publishes. Notes take the README "What's new" block for the tag. The upstream `build*.yml` workflows stay `workflow_dispatch` only and need upstream signing secrets. Toolchain pins: `rust-toolchain.toml` (1.96.0), `frontend/.nvmrc` (20), `packageManager` in package.json.
 
 ## Branches, versions, commits
 
@@ -59,7 +59,7 @@ CI: `.github/workflows/ci.yml` runs on push to `main` and on every PR: `pnpm lin
 - Version is duplicated in `frontend/package.json`, `frontend/src-tauri/Cargo.toml` and `frontend/src-tauri/tauri.conf.json`; the release workflow fails unless all three match the tag. Also bump the `meetily` entry in the root `Cargo.lock`, or CI's `cargo test --locked` fails. Bump all three, update the README "What's new" section, then tag `vX.Y.Z` and push.
 - The About page shows the same last 3 releases in `frontend/src/lib/about.ts` (`WHATS_NEW`, one or two short highlights each); `tests/lib/about.test.ts` fails unless its versions match the README blocks and the first one matches package.json.
 - README "## What's new" has no version in its heading. It holds one `### vX.Y.Z` block per release for the last 3 releases only, each with the few major user-facing changes; drop the oldest block when adding a new one. The release workflow copies the block matching the tag into the release notes and fails if it is missing. Write it for users: plain words about what they can now do, no technical terms.
-- There is no auto-updater. Check for Updates (About, tray, a startup check) asks the GitHub API for this fork's latest release (`release_check.rs`) and only links to the release page.
+- Check for Updates (About, tray, a startup check) asks the GitHub API for this fork's latest release (`release_check.rs`). Update and Restart in the dialog uses the Tauri updater: it reads `latest.json` from the latest release, verifies the download against the public key in `tauri.conf.json`, replaces the app (macOS) or installs the `.deb`/`.rpm` with a password prompt (Linux), then restarts. The private key lives only in the `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repo secrets and the owner's backup; local builds skip updater artifacts unless `createUpdaterArtifacts` is passed.
 
 ## Architecture
 
@@ -103,7 +103,7 @@ External LLM providers (Ollama, OpenAI, Claude, Groq, OpenRouter, custom OpenAI-
 
 - `meetily` crate features: `metal`, `coreml`, `cuda`, `vulkan`, `hipblas`, `openblas`, `openmp`. macOS always gets metal+coreml through target-specific deps; Windows/Linux default to CPU. `scripts/auto-detect-gpu.js` picks the feature; llama-helper gets the same one except `coreml` maps to `metal`.
 - Windows distribution builds must stay portable: workflows set `CMAKE_PROJECT_INCLUDE=.github/force-portable-ggml.cmake` (forces `GGML_NATIVE=OFF`) and `RUSTFLAGS=-C target-cpu=x86-64-v2`, then `verify-portable-ggml.cjs` inspects the whisper CMake cache before bundling. The README promises AVX2-only CPUs work; keep these when touching whisper build flags.
-- Platform needs: macOS requires microphone and screen-recording permission for system audio; Linux builds need cmake, llvm, libomp; Windows needs VS Build Tools C++ workload and CMake.
+- Platform needs: macOS requires microphone and screen-recording permission for system audio; Linux builds need cmake, llvm, libomp; on Linux the app uses the system ffmpeg (`tauri.linux.conf.json` drops the bundled one and makes the .deb and .rpm depend on ffmpeg); Windows needs VS Build Tools C++ workload and CMake.
 
 ## Conventions
 

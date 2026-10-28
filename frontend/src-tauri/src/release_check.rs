@@ -1,7 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use tauri::{AppHandle, Emitter};
+use tauri_plugin_store::StoreExt;
+use tauri_plugin_updater::UpdaterExt;
 
 pub const REPO: &str = "asidko/meetily-pro";
+const PREFERENCES_FILE: &str = "update-preferences.json";
+const CHECK_ON_STARTUP: &str = "check_on_startup";
 const RATE_LIMITED: &str = "GitHub limits how often it can be asked. Try again in an hour.";
 
 #[derive(Deserialize)]
@@ -20,6 +25,7 @@ pub struct ReleaseCheck {
     pub url: String,
     pub date: Option<String>,
     pub notes: Option<String>,
+    pub can_install: bool,
 }
 
 fn version_parts(version: &str) -> Vec<u64> {
@@ -51,7 +57,15 @@ fn compare(release: GithubRelease, current_version: &str) -> ReleaseCheck {
         url: release.html_url,
         date: release.published_at,
         notes: release.body.filter(|body| !body.trim().is_empty()),
+        can_install: false,
     }
+}
+
+fn can_self_update() -> bool {
+    use tauri::utils::{config::BundleType, platform::bundle_type};
+    cfg!(all(target_os = "macos", target_arch = "aarch64"))
+        || (cfg!(all(target_os = "linux", target_arch = "x86_64"))
+            && matches!(bundle_type(), Some(BundleType::Deb | BundleType::Rpm)))
 }
 
 #[tauri::command]
@@ -84,7 +98,62 @@ pub async fn check_latest_release() -> Result<ReleaseCheck, String> {
         .json()
         .await
         .map_err(|e| format!("Unexpected answer from GitHub: {}", e))?;
-    Ok(compare(release, env!("CARGO_PKG_VERSION")))
+    Ok(ReleaseCheck {
+        can_install: can_self_update(),
+        ..compare(release, env!("CARGO_PKG_VERSION"))
+    })
+}
+
+#[tauri::command]
+pub fn get_update_check_on_startup(app: AppHandle) -> bool {
+    app.store(PREFERENCES_FILE)
+        .ok()
+        .and_then(|store| store.get(CHECK_ON_STARTUP))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(true)
+}
+
+#[tauri::command]
+pub fn set_update_check_on_startup(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let store = app.store(PREFERENCES_FILE).map_err(|e| e.to_string())?;
+    store.set(CHECK_ON_STARTUP, enabled);
+    store.save().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn install_update(app: AppHandle) -> Result<(), String> {
+    if crate::audio::is_recording().await {
+        return Err("Stop the recording before updating".to_string());
+    }
+    let update = app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| format!("Could not check for the update: {}", e))?
+        .ok_or("You already have the newest version")?;
+    let mut downloaded = 0u64;
+    let mut last_percent = None;
+    update
+        .download_and_install(
+            |chunk, total| {
+                downloaded += chunk as u64;
+                let percent = total.filter(|t| *t > 0).map(|t| (downloaded * 100 / t).min(100));
+                if percent.is_some() && percent != last_percent {
+                    last_percent = percent;
+                    let _ = app.emit("update-download-progress", percent);
+                }
+            },
+            || {
+                let _ = app.emit("update-download-progress", Some(100u64));
+            },
+        )
+        .await
+        .map_err(|e| format!("Could not install the update: {}", e))?;
+    if crate::audio::is_recording().await {
+        return Ok(());
+    }
+    app.restart()
 }
 
 #[cfg(test)]

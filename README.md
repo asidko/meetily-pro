@@ -19,7 +19,7 @@ Fork of [Zackriya-Solutions/meetily](https://github.com/Zackriya-Solutions/meeti
 
 ## Install
 
-- **Download (recommended)**: [macOS Apple Silicon .dmg](https://github.com/asidko/meetily-pro/releases/latest/download/meetily-macos-arm64.dmg) or [Linux x86_64 .deb](https://github.com/asidko/meetily-pro/releases/latest/download/meetily-linux-x86_64.deb), checksums in [Releases](https://github.com/asidko/meetily-pro/releases/latest).
+- **Download (recommended)**: [macOS Apple Silicon .dmg](https://github.com/asidko/meetily-pro/releases/latest/download/meetily-macos-arm64.dmg), [Linux x86_64 .deb](https://github.com/asidko/meetily-pro/releases/latest/download/meetily-linux-x86_64.deb) (Debian, Ubuntu) or [Linux x86_64 .rpm](https://github.com/asidko/meetily-pro/releases/latest/download/meetily-linux-x86_64.rpm) (Fedora, RHEL, openSUSE), checksums in [Releases](https://github.com/asidko/meetily-pro/releases/latest).
 - **Build from source**: Windows, Intel Mac, CUDA. See below.
 
 The macOS app is ad-hoc signed, not notarized. After dragging it to Applications, run `xattr -dr com.apple.quarantine "/Applications/Meetily Pro.app"` once. It needs microphone and screen-recording permission (that is how system audio is captured).
@@ -86,7 +86,7 @@ All settings are in the app. Data lives in the Tauri app data dir (`~/Library/Ap
 
 ## Build from source
 
-Rust stable, Node 20, pnpm 9.15.9, CMake. Linux adds clang and libasound2-dev; Windows adds VS Build Tools C++ workload.
+Rust stable, Node 20, pnpm 9.15.9, CMake. Linux adds clang, libasound2-dev and ffmpeg (the app uses the system ffmpeg on Linux); Windows adds VS Build Tools C++ workload.
 
 ```bash
 git clone https://github.com/asidko/meetily-pro

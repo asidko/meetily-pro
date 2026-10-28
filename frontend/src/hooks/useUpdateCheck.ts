@@ -49,8 +49,8 @@ export function useUpdateCheck(options: UseUpdateCheckOptions = {}) {
   useEffect(() => {
     if (checkOnMount) {
       // Delay the check slightly to avoid blocking app startup
-      const timer = setTimeout(() => {
-        checkForUpdates(false);
+      const timer = setTimeout(async () => {
+        if (await updateService.getCheckOnStartup().catch(() => true)) checkForUpdates(false);
       }, 2000); // Check 2 seconds after mount
 
       return () => clearTimeout(timer);

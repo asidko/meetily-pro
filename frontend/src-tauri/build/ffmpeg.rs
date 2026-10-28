@@ -9,6 +9,9 @@ pub fn ensure_ffmpeg_binary() {
     let target = std::env::var("TARGET")
         .or_else(|_| std::env::var("HOST"))
         .expect("Neither TARGET nor HOST environment variable set");
+    if target.contains("linux") {
+        return;
+    }
 
     println!("cargo:warning=🎬 Checking FFmpeg binary for target: {}", target);
 
@@ -135,14 +138,6 @@ fn get_ffmpeg_url_for_target(target: &str) -> Result<String, String> {
             // Intel Mac
             "https://github.com/Zackriya-Solutions/ffmpeg-binaries/releases/download/0.0.1/ffmpeg-8.0.1.zip"
         }
-    } else if target.contains("linux") {
-        if target.contains("aarch64") || target.contains("arm") {
-            // Linux ARM64
-            "https://github.com/Zackriya-Solutions/ffmpeg-binaries/releases/download/0.0.1/ffmpeg-release-arm64-static.tar.xz"
-        } else {
-            // Linux x86_64
-            "https://github.com/Zackriya-Solutions/ffmpeg-binaries/releases/download/0.0.1/ffmpeg-release-amd64-static.tar.xz"
-        }
     } else {
         return Err(format!("Unsupported target platform: {}", target));
     };
@@ -150,7 +145,7 @@ fn get_ffmpeg_url_for_target(target: &str) -> Result<String, String> {
     Ok(url.to_string())
 }
 
-/// Extract FFmpeg binary from downloaded archive (handles ZIP and TAR.XZ)
+/// Extract FFmpeg binary from downloaded archive (ZIP)
 fn extract_ffmpeg_from_archive(
     archive_path: &std::path::Path,
     target: &str,
@@ -168,8 +163,6 @@ fn extract_ffmpeg_from_archive(
 
     if archive_str.ends_with(".zip") {
         extract_zip(archive_path, &extract_dir)?;
-    } else if archive_str.ends_with(".tar.xz") || archive_str.ends_with(".txz") {
-        extract_tar_xz(archive_path, &extract_dir)?;
     } else {
         return Err(format!("Unsupported archive format: {}", archive_str));
     }
@@ -257,25 +250,6 @@ fn extract_zip(
             }
         }
     }
-
-    Ok(())
-}
-
-/// Extract TAR.XZ archive (Linux)
-fn extract_tar_xz(
-    archive_path: &std::path::Path,
-    extract_dir: &std::path::Path,
-) -> Result<(), String> {
-    let file = std::fs::File::open(archive_path)
-        .map_err(|e| format!("Failed to open TAR.XZ: {}", e))?;
-
-    // Decompress XZ
-    let decompressor = xz2::read::XzDecoder::new(file);
-
-    // Extract TAR
-    let mut archive = tar::Archive::new(decompressor);
-    archive.unpack(extract_dir)
-        .map_err(|e| format!("Failed to extract TAR: {}", e))?;
 
     Ok(())
 }

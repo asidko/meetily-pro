@@ -1,5 +1,5 @@
-import React from 'react';
-import { Download, ExternalLink } from 'lucide-react';
+import React, { useState } from 'react';
+import { Download, ExternalLink, RefreshCw } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -12,7 +12,8 @@ import {
   DialogTitle,
 } from './ui/dialog';
 import { Button } from './ui/button';
-import { UpdateInfo } from '@/services/updateService';
+import { UpdateInfo, updateService } from '@/services/updateService';
+import { useRecordingState, RecordingStatus } from '@/contexts/RecordingStateContext';
 import { toast } from 'sonner';
 
 interface UpdateDialogProps {
@@ -22,6 +23,31 @@ interface UpdateDialogProps {
 }
 
 export function UpdateDialog({ open, onOpenChange, updateInfo }: UpdateDialogProps) {
+  const { status } = useRecordingState();
+  const recordingBusy = ![RecordingStatus.IDLE, RecordingStatus.COMPLETED, RecordingStatus.ERROR].includes(status);
+  const [installing, setInstalling] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
+
+  const installUpdate = async () => {
+    setInstalling(true);
+    setProgress(null);
+    try {
+      await updateService.installUpdate(setProgress);
+      toast.success('Update installed', { description: 'It takes effect the next time Meetily Pro starts.' });
+      onOpenChange(false);
+    } catch (error) {
+      toast.error('Could not update', { description: String(error) });
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  const installLabel = !installing ? 'Update and Restart' : progress === 100 ? 'Installing...' : progress === null ? 'Downloading...' : `Downloading ${progress}%`;
+
+  const handleOpenChange = (next: boolean) => {
+    if (!installing) onOpenChange(next);
+  };
+
   const openReleasePage = async () => {
     if (!updateInfo?.url) return;
     try {
@@ -46,7 +72,7 @@ export function UpdateDialog({ open, onOpenChange, updateInfo }: UpdateDialogPro
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -84,13 +110,31 @@ export function UpdateDialog({ open, onOpenChange, updateInfo }: UpdateDialogPro
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={installing}>
             Later
           </Button>
-          <Button onClick={openReleasePage} className="bg-blue-600 hover:bg-blue-700">
-            <ExternalLink className="h-4 w-4 mr-2" />
-            Open Download Page
-          </Button>
+          {updateInfo.canInstall ? (
+            <>
+              <Button variant="outline" onClick={openReleasePage} disabled={installing}>
+                <ExternalLink className="h-4 w-4 mr-2" />
+                Release Page
+              </Button>
+              <Button
+                onClick={installUpdate}
+                disabled={installing || recordingBusy}
+                title={recordingBusy ? 'Wait until the recording is stopped and saved' : undefined}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${installing ? 'animate-spin' : ''}`} />
+                {installLabel}
+              </Button>
+            </>
+          ) : (
+            <Button onClick={openReleasePage} className="bg-blue-600 hover:bg-blue-700">
+              <ExternalLink className="h-4 w-4 mr-2" />
+              Open Download Page
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

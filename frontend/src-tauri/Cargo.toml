@@ -57,8 +57,6 @@ tauri-build = { version = "2.3.0", features = [] }
 reqwest = { version = "0.11", features = ["blocking", "multipart", "json", "stream"] }
 which = "6.0.1"
 zip = "2.2"           # ZIP extraction (Windows, macOS)
-tar = "0.4"           # TAR extraction (Linux)
-xz2 = "0.1"           # XZ decompression (Linux)
 sha2 = "0.10"
 
 
@@ -152,6 +150,7 @@ tauri-plugin-fs = "2.4.0"
 tauri-plugin-dialog = "2.3.0"
 tauri-plugin-store = "2.4.0"
 tauri-plugin-notification = "2.3.1"
+tauri-plugin-updater = "2.10.1"
 
 # Desktop-only single instance guard
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]

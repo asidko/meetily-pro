@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
+import { listen } from '@tauri-apps/api/event';
 
 export interface UpdateInfo {
   available: boolean;
@@ -8,6 +9,7 @@ export interface UpdateInfo {
   date?: string;
   body?: string;
   url?: string;
+  canInstall?: boolean;
 }
 
 interface ReleaseCheck {
@@ -17,6 +19,7 @@ interface ReleaseCheck {
   url: string;
   date: string | null;
   notes: string | null;
+  can_install: boolean;
 }
 
 /**
@@ -63,12 +66,30 @@ export class UpdateService {
         date: release.date ?? undefined,
         body: release.notes ?? undefined,
         url: release.url,
+        canInstall: release.can_install,
       };
     } catch (error) {
       console.error('Failed to check for updates:', error);
       throw error;
     } finally {
       this.updateCheckInProgress = false;
+    }
+  }
+
+  getCheckOnStartup(): Promise<boolean> {
+    return invoke<boolean>('get_update_check_on_startup');
+  }
+
+  setCheckOnStartup(enabled: boolean): Promise<void> {
+    return invoke('set_update_check_on_startup', { enabled });
+  }
+
+  async installUpdate(onProgress: (percent: number | null) => void): Promise<void> {
+    const unlisten = await listen<number | null>('update-download-progress', (event) => onProgress(event.payload));
+    try {
+      await invoke('install_update');
+    } finally {
+      unlisten();
     }
   }
 

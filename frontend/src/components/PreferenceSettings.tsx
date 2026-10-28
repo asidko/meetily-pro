@@ -5,6 +5,8 @@ import { Switch } from "./ui/switch"
 import { FolderOpen } from "lucide-react"
 import { invoke } from "@tauri-apps/api/core"
 import { useConfig, NotificationSettings } from "@/contexts/ConfigContext"
+import { updateService } from "@/services/updateService"
+import { toast } from "sonner"
 
 export function PreferenceSettings() {
   const {
@@ -18,6 +20,21 @@ export function PreferenceSettings() {
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean | null>(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [previousNotificationsEnabled, setPreviousNotificationsEnabled] = useState<boolean | null>(null);
+  const [checkUpdatesOnStartup, setCheckUpdatesOnStartup] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    updateService.getCheckOnStartup().then(setCheckUpdatesOnStartup).catch(() => setCheckUpdatesOnStartup(true));
+  }, []);
+
+  const toggleUpdateCheck = async (enabled: boolean) => {
+    setCheckUpdatesOnStartup(enabled);
+    try {
+      await updateService.setCheckOnStartup(enabled);
+    } catch (error) {
+      setCheckUpdatesOnStartup(!enabled);
+      toast.error('Could not save the update setting', { description: String(error) });
+    }
+  };
 
   // Lazy load preferences on mount (only loads if not already cached)
   useEffect(() => {
@@ -118,6 +135,16 @@ export function PreferenceSettings() {
             <p className="text-sm text-gray-600">Enable or disable notifications of start and end of meeting</p>
           </div>
           <Switch checked={notificationsEnabledValue} onCheckedChange={setNotificationsEnabled} />
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Updates</h3>
+            <p className="text-sm text-gray-600">Check for a new version when the app starts. Check for Updates in About works either way.</p>
+          </div>
+          <Switch checked={checkUpdatesOnStartup ?? true} onCheckedChange={toggleUpdateCheck} disabled={checkUpdatesOnStartup === null} />
         </div>
       </div>
 
